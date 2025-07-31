@@ -1,52 +1,40 @@
-# run.py
 """
-HackRx 6.0 - Application Entry Point
-Run this file to start the server
+HackRx 6.0 - Render Compatible Entry Point
+Handles port binding correctly for Render deployment
 """
 
-import uvicorn
-import sys
 import os
-
-# Optional: Add app directory to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# ✅ Define your config here instead of using .env
-DEBUG = False
-HOST = "0.0.0.0"
-PORT = 8000
-LOG_LEVEL = "info" if DEBUG else "warning"
-
-# Optional: Keys for Claude, Groq, etc.
-API_KEY = "your_hackrx_api_key_here"
-CLAUDE_API_KEY = "your_claude_key_here"
-GROQ_API_KEY = "your_groq_key_here"
+import uvicorn
+from app.core.config import settings
 
 def main():
-    """Main function to start the server"""
-    print("🚀 Starting HackRx 6.0 Server...")
-    print(f"📍 Host: {HOST}")
-    print(f"📍 Port: {PORT}")
-    print(f"🔧 Debug: {DEBUG}")
-    print(f"🔑 API Key: {'✅' if API_KEY else '❌'}")
-    print(f"🔑 Claude: {'✅' if CLAUDE_API_KEY else '❌'}")
-    print(f"🔑 Groq: {'✅' if GROQ_API_KEY else '❌'}")
+    """Main entry point for Render deployment"""
     
-    print("\n🎯 Server will be accessible at:")
-    print(f"   Local:  http://localhost:{PORT}")
-    print(f"   Network: http://{HOST}:{PORT}")
-    print(f"   Health: http://localhost:{PORT}/health")
-    print(f"   API:    http://localhost:{PORT}/hackrx/run")
-    print(f"   Docs:   http://localhost:{PORT}/docs")
+    # Get port from environment (Render sets this automatically)
+    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "0.0.0.0")
     
-    print("\n🚀 Starting server now...")
+    print(f"🚀 Starting HackRx 6.0 Server...")
+    print(f"📍 Host: {host}")
+    print(f"📍 Port: {port}")
+    print(f"🎯 Server will be accessible at:")
+    print(f"   Local:  http://localhost:{port}")
+    print(f"   Network: http://{host}:{port}")
+    print(f"   Health: http://{host}:{port}/health")
+    print(f"   API:    http://{host}:{port}/hackrx/run")
+    print(f"   Docs:   http://{host}:{port}/docs")
+    print(f"🚀 Starting server now...")
     
+    # Start server with proper configuration
     uvicorn.run(
         "app.main:app",
-        host=HOST,
-        port=PORT,
-        reload=DEBUG,
-        log_level=LOG_LEVEL
+        host=host,
+        port=port,
+        reload=False,  # Disable reload in production
+        log_level="info",
+        access_log=True,
+        timeout_keep_alive=30,
+        timeout_graceful_shutdown=10
     )
 
 if __name__ == "__main__":
