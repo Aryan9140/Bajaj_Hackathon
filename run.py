@@ -1,41 +1,56 @@
+#!/usr/bin/env python3
 """
-HackRx 6.0 - Render Compatible Entry Point
-Handles port binding correctly for Render deployment
+HackRx 6.0 - Fixed Entry Point for Render
+Handles port binding correctly
 """
 
 import os
-import uvicorn
-from app.core.config import settings
+import sys
 
 def main():
-    """Main entry point for Render deployment"""
-    
-    # Get port from environment (Render sets this automatically)
-    port = int(os.getenv("PORT", 8000))
-    host = os.getenv("HOST", "0.0.0.0")
-    
-    print(f"🚀 Starting HackRx 6.0 Server...")
-    print(f"📍 Host: {host}")
-    print(f"📍 Port: {port}")
-    print(f"🎯 Server will be accessible at:")
-    print(f"   Local:  http://localhost:{port}")
-    print(f"   Network: http://{host}:{port}")
-    print(f"   Health: http://{host}:{port}/health")
-    print(f"   API:    http://{host}:{port}/hackrx/run")
-    print(f"   Docs:   http://{host}:{port}/docs")
-    print(f"🚀 Starting server now...")
-    
-    # Start server with proper configuration
-    uvicorn.run(
-        "app.main:app",
-        host=host,
-        port=port,
-        reload=False,  # Disable reload in production
-        log_level="info",
-        access_log=True,
-        timeout_keep_alive=30,
-        timeout_graceful_shutdown=10
-    )
+    """Entry point for the application"""
+    try:
+        # Import uvicorn here to handle any import issues
+        import uvicorn
+        
+        # Get port from environment - Render sets this automatically
+        port = int(os.environ.get("PORT", 8000))
+        host = os.environ.get("HOST", "0.0.0.0")
+        
+        print(f"🚀 Starting HackRx 6.0...")
+        print(f"📍 Port: {port}")
+        print(f"📍 Host: {host}")
+        
+        # Start the application
+        uvicorn.run(
+            "app.main:app",
+            host=host,
+            port=port,
+            reload=False,
+            log_level="info"
+        )
+        
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print("🔧 Trying alternative import...")
+        
+        # Fallback: try importing from app
+        try:
+            from app.main import app
+            import uvicorn
+            
+            port = int(os.environ.get("PORT", 8000))
+            host = os.environ.get("HOST", "0.0.0.0")
+            
+            uvicorn.run(app, host=host, port=port)
+            
+        except Exception as fallback_error:
+            print(f"❌ Fallback failed: {fallback_error}")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"❌ Startup error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
