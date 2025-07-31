@@ -15,7 +15,7 @@ python-docx==1.1.2
 python-multipart==0.0.12
 
 # Vector Search and ML (Python 3.13 compatible versions)
-faiss-cpu==1.8.0.post1
+# faiss-cpu==1.8.0.post1
 sentence-transformers==3.3.1
 numpy
 scikit-learn==1.6.0
