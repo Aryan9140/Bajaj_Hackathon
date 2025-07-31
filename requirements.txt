@@ -1,74 +1,58 @@
-# HackRx 6.0 - Complete System Requirements
+# HackRx 6.0 - Python 3.13 Compatible Requirements
 
 # FastAPI and Web Framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-gunicorn==21.2.0
+fastapi==0.115.0
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
 
 # HTTP Client
-aiohttp==3.9.1
-httpx==0.25.2
+aiohttp==3.10.11
+httpx==0.28.1
 
 # Document Processing
 PyPDF2==3.0.1
-python-docx==1.1.0
-python-multipart==0.0.6
+python-docx==1.1.2
+python-multipart==0.0.12
 
-# Vector Search and ML
-faiss-cpu==1.7.4
-sentence-transformers==2.2.2
+# Vector Search and ML (Python 3.13 compatible versions)
+faiss-cpu==1.8.0.post1
+sentence-transformers==3.3.1
 numpy
-scikit-learn
+scikit-learn==1.6.0
 
 # AstraDB Integration
-astrapy==0.7.5
-cassandra-driver==3.28.0
+astrapy==1.5.0
 
 # LLM Integration
-openai==1.6.1
-anthropic==0.8.1
-groq==0.4.1
+openai==1.57.0
+anthropic==0.40.0
+groq==0.13.0
 
-# Data Processing
-pandas==2.1.4
-
-
-
-
-
-
+# Data Processing (Remove problematic pandas or use compatible version)
+# pandas==2.2.3  # Python 3.13 compatible version
 python-json-logger==2.0.7
 
 # Security and Configuration
-pydantic==2.5.2
-pydantic-settings==2.1.0
-python-jose[cryptography]==3.3.0
-python-dotenv==1.0.0
+pydantic==2.10.3
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
 
 # Async and Performance
 asyncio-throttle==1.0.2
-asyncpg==0.29.0
-redis==5.0.1
 
 # Text Processing and NLP
-nltk==3.8.1
-spacy==3.7.2
-regex==2023.12.25
+# nltk==3.9.1  # Optional - remove if not needed
+# spacy==3.8.2  # Optional - remove if not needed
+regex==2024.11.6
 
 # Utilities
-tqdm==4.66.1
-python-dateutil==2.8.2
-pytz==2023.3
-
-# Development and Testing
-pytest==7.4.4
-pytest-asyncio==0.21.1
-black==23.12.1
-flake8==6.1.0
+tqdm==4.67.1
+python-dateutil==2.9.0.post0
 
 # Logging and Monitoring
-structlog==23.2.0
-prometheus-client==0.19.0
+structlog==24.4.0
 
-# Email Processing
-email-parser
+# Remove heavy optional dependencies for faster deployment
+# redis==5.2.0  # Only if using Redis
+# cassandra-driver==3.29.2  # Only if using Cassandra
+# pytest==8.3.4  # Only for development
