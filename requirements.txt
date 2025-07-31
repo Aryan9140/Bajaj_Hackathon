@@ -1,0 +1,74 @@
+# HackRx 6.0 - Complete System Requirements
+
+# FastAPI and Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# HTTP Client
+aiohttp==3.9.1
+httpx==0.25.2
+
+# Document Processing
+PyPDF2==3.0.1
+python-docx==1.1.0
+python-multipart==0.0.6
+
+# Vector Search and ML
+faiss-cpu==1.7.4
+sentence-transformers==2.2.2
+numpy
+scikit-learn
+
+# AstraDB Integration
+astrapy==0.7.5
+cassandra-driver==3.28.0
+
+# LLM Integration
+openai==1.6.1
+anthropic==0.8.1
+groq==0.4.1
+
+# Data Processing
+pandas==2.1.4
+
+
+
+
+
+
+python-json-logger==2.0.7
+
+# Security and Configuration
+pydantic==2.5.2
+pydantic-settings==2.1.0
+python-jose[cryptography]==3.3.0
+python-dotenv==1.0.0
+
+# Async and Performance
+asyncio-throttle==1.0.2
+asyncpg==0.29.0
+redis==5.0.1
+
+# Text Processing and NLP
+nltk==3.8.1
+spacy==3.7.2
+regex==2023.12.25
+
+# Utilities
+tqdm==4.66.1
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Development and Testing
+pytest==7.4.4
+pytest-asyncio==0.21.1
+black==23.12.1
+flake8==6.1.0
+
+# Logging and Monitoring
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# Email Processing
+email-parser

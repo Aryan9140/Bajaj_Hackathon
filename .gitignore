@@ -1,0 +1,23 @@
+.venv
+
+
+env
+.env
+
+/venv
+
+.env
+
+
+.env.example
+/.env.example
+
+# Ignore env files & Python virtualenvs
+.env
+env/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env
