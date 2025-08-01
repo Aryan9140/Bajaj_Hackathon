@@ -1,21 +1,23 @@
-"""
-app/main.py - Competition LLM Features with Groq Primary
-Optimized for free tier usage and maximum accuracy
-"""
+# app/main.py - Fixed Complete FastAPI Application
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+import asyncio
+import logging
+import time
+import os
+import uuid
+from datetime import datetime
 
+# Your competition features (embedded in main.py to avoid import issues)
 import aiohttp
 import PyPDF2
-import docx
 import io
 import re
-import asyncio
 import numpy as np
-from typing import List, Dict, Any, Optional, Tuple
-import logging
-import os
-import json
-import time
-from datetime import datetime
+from typing import Tuple
 import hashlib
 from collections import defaultdict
 
@@ -25,6 +27,7 @@ try:
     GROQ_AVAILABLE = True
 except ImportError:
     GROQ_AVAILABLE = False
+    print("Groq not available, using fallback")
 
 # OpenAI (Secondary - if available)
 try:
@@ -32,6 +35,7 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
+    print("OpenAI not available")
 
 # Semantic search (Optional)
 try:
@@ -39,12 +43,7 @@ try:
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
-
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-except ImportError:
-    FAISS_AVAILABLE = False
+    print("Sentence transformers not available, using keyword search")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -53,12 +52,22 @@ logger = logging.getLogger(__name__)
 # Environment variables
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+API_KEY = "6d2683f80eca9847d20948e1e5508885d08fdc65d943182f85de250687859193"
 
+# Pydantic models
+class QueryRequest(BaseModel):
+    documents: str = Field(..., description="Document URL to process")
+    questions: List[str] = Field(..., description="List of questions to answer")
+
+class QueryResponse(BaseModel):
+    answers: List[str] = Field(..., description="List of answers")
+    processing_time: Optional[float] = None
+    request_id: Optional[str] = None
+    cached: Optional[bool] = False
+
+# Competition classes (embedded to avoid import issues)
 class DocumentProcessor:
-    """
-    Competition-grade document processor
-    Optimized for maximum text extraction accuracy
-    """
+    """Competition-grade document processor optimized for maximum text extraction accuracy"""
     
     def __init__(self):
         self.session_timeout = aiohttp.ClientTimeout(total=120)
@@ -84,7 +93,7 @@ class DocumentProcessor:
                     connector=aiohttp.TCPConnector(limit=10)
                 ) as session:
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                     }
                     
                     async with session.get(url, headers=headers) as response:
@@ -126,16 +135,6 @@ class DocumentProcessor:
                             page_text = text1
                     except:
                         pass
-                    
-                    # Alternative extraction for difficult pages
-                    if not page_text:
-                        try:
-                            if hasattr(page, 'extract_text'):
-                                text2 = page.extract_text(space_width=200)
-                                if text2 and len(text2.strip()) > 10:
-                                    page_text = text2
-                        except:
-                            pass
                     
                     if page_text:
                         cleaned_text = self.clean_pdf_text(page_text)
@@ -232,9 +231,6 @@ class DocumentProcessor:
             if document_data.startswith(b'%PDF'):
                 logger.info("Processing as PDF")
                 extracted_text = await self.extract_text_from_pdf(document_data)
-            elif document_data.startswith(b'PK'):
-                logger.info("Processing as DOCX")
-                extracted_text = self.extract_text_from_docx(document_data)
             else:
                 logger.info("Processing as plain text")
                 extracted_text = document_data.decode('utf-8', errors='ignore')
@@ -248,33 +244,6 @@ class DocumentProcessor:
             
         except Exception as e:
             logger.error(f"Document processing failed: {e}")
-            return ""
-    
-    def extract_text_from_docx(self, docx_data: bytes) -> str:
-        """Extract text from DOCX documents"""
-        try:
-            docx_file = io.BytesIO(docx_data)
-            document = docx.Document(docx_file)
-            
-            text_parts = []
-            
-            for paragraph in document.paragraphs:
-                if paragraph.text.strip():
-                    text_parts.append(paragraph.text.strip())
-            
-            for table in document.tables:
-                for row in table.rows:
-                    row_text = []
-                    for cell in row.cells:
-                        if cell.text.strip():
-                            row_text.append(cell.text.strip())
-                    if row_text:
-                        text_parts.append(' | '.join(row_text))
-            
-            return '\n'.join(text_parts)
-            
-        except Exception as e:
-            logger.error(f"DOCX extraction failed: {e}")
             return ""
     
     def final_cleanup(self, text: str) -> str:
@@ -292,9 +261,7 @@ class DocumentProcessor:
         return text
 
 class GroqSemanticSearch:
-    """
-    Semantic search optimized for Groq LLM integration
-    """
+    """Semantic search optimized for Groq LLM integration"""
     
     def __init__(self):
         self.embedding_model = None
@@ -302,7 +269,6 @@ class GroqSemanticSearch:
         
         if SENTENCE_TRANSFORMERS_AVAILABLE:
             try:
-                # Use lightweight model for better performance
                 self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
                 logger.info("Semantic search model loaded")
             except Exception as e:
@@ -313,7 +279,6 @@ class GroqSemanticSearch:
         if not text:
             return []
         
-        # Strategy: Split by sentences but keep reasonable chunk sizes
         sentences = re.split(r'[.!?]+', text)
         chunks = []
         current_chunk = ""
@@ -347,7 +312,6 @@ class GroqSemanticSearch:
         
         if self.embedding_model:
             try:
-                # Semantic search
                 query_embedding = self.embedding_model.encode([query])
                 chunk_embeddings = self.embedding_model.encode(self.text_chunks)
                 
@@ -359,7 +323,6 @@ class GroqSemanticSearch:
             except:
                 pass
         
-        # Fallback to keyword search
         return self.keyword_search(query, top_k)
     
     def keyword_search(self, query: str, top_k: int) -> List[Tuple[str, float]]:
@@ -370,12 +333,10 @@ class GroqSemanticSearch:
         for chunk in self.text_chunks:
             chunk_words = set(re.findall(r'\b\w+\b', chunk.lower()))
             
-            # Calculate similarity
             intersection = len(query_words & chunk_words)
             union = len(query_words | chunk_words)
             jaccard = intersection / union if union > 0 else 0
             
-            # Bonus for exact phrases
             phrase_bonus = 0
             query_text = query.lower()
             if len(query_text) > 10:
@@ -385,7 +346,6 @@ class GroqSemanticSearch:
                     if phrase in chunk.lower():
                         phrase_bonus += 0.2
             
-            # Bonus for numbers (important in policy docs)
             number_bonus = 0.1 if re.search(r'\d+', chunk) else 0
             
             total_score = jaccard + phrase_bonus + number_bonus
@@ -396,10 +356,7 @@ class GroqSemanticSearch:
         return scored_chunks[:top_k]
 
 class CompetitionAnswerEngine:
-    """
-    Competition answer engine with Groq LLM primary
-    Optimized for free tier usage and maximum accuracy
-    """
+    """Competition answer engine with Groq LLM primary"""
     
     def __init__(self):
         self.groq_client = None
@@ -431,23 +388,21 @@ class CompetitionAnswerEngine:
     async def generate_competition_answer(self, question: str) -> str:
         """Generate answer optimized for competition scoring"""
         try:
-            # Strategy 1: Semantic search + Groq LLM
             relevant_chunks = self.search_engine.search(question, top_k=3)
             
             if relevant_chunks:
                 best_chunks = [chunk for chunk, score in relevant_chunks if score > 0.1]
-                context = "\n\n".join(best_chunks[:2])  # Limit for token efficiency
+                context = "\n\n".join(best_chunks[:2])
                 
                 if context:
                     groq_answer = await self.groq_generation(question, context)
                     if self.is_valid_answer(groq_answer, question):
                         return groq_answer
             
-            # Strategy 2: Full document fallback
             fallback_answer = self.document_fallback(question)
             if self.is_valid_answer(fallback_answer, question):
                 return fallback_answer
-            
+                
             return "Information about this topic is not available in the provided document."
             
         except Exception as e:
@@ -457,7 +412,6 @@ class CompetitionAnswerEngine:
     async def groq_generation(self, question: str, context: str) -> str:
         """Generate answer using Groq LLM (Primary)"""
         
-        # Groq-optimized prompt for competition accuracy
         system_prompt = """You are a document analyst for a competition scoring system. Maximum accuracy is critical.
 
 COMPETITION RULES:
@@ -480,13 +434,13 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
         if self.groq_client:
             try:
                 response = self.groq_client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",  # Best free model
+                    model="llama-3.1-70b-versatile",
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
                     max_tokens=800,
-                    temperature=0.0,  # Maximum consistency
+                    temperature=0.0,
                     top_p=0.1
                 )
                 
@@ -517,7 +471,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
             except Exception as e:
                 logger.warning(f"OpenAI fallback failed: {e}")
         
-        # Rule-based fallback
         return self.rule_based_extraction(question, context)
     
     def document_fallback(self, question: str) -> str:
@@ -526,8 +479,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
             return "Document not available for processing."
         
         question_lower = question.lower()
-        
-        # Extract key terms based on question type
         key_terms = []
         
         if "grace period" in question_lower:
@@ -551,7 +502,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
         elif "health check" in question_lower:
             key_terms.extend(["health check", "preventive", "reimbursement", "policy years"])
         
-        # Find relevant sentences
         sentences = re.split(r'[.!?]+', self.full_document)
         relevant_sentences = []
         
@@ -563,12 +513,10 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
             sentence_lower = sentence.lower()
             match_count = sum(1 for term in key_terms if term in sentence_lower)
             
-            # Also check for any key term presence
             if match_count >= 1 or any(term in sentence_lower for term in key_terms):
                 relevant_sentences.append((sentence, match_count))
         
         if relevant_sentences:
-            # Sort by relevance and combine best sentences
             relevant_sentences.sort(key=lambda x: x[1], reverse=True)
             best_sentences = [sent for sent, count in relevant_sentences[:3] if count > 0]
             
@@ -585,7 +533,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
         sentences = re.split(r'[.!?]+', context)
         question_words = set(re.findall(r'\b\w+\b', question.lower()))
         
-        # Remove common stop words from question
         stop_words = {'what', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
         question_words = question_words - stop_words
         
@@ -598,7 +545,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
             sentence_words = set(re.findall(r'\b\w+\b', sentence.lower()))
             overlap = len(question_words & sentence_words)
             
-            # Bonus scoring
             number_bonus = 2 if re.search(r'\d+', sentence) else 0
             length_bonus = 1 if len(sentence) > 50 else 0
             
@@ -610,7 +556,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
             best_sentences.sort(key=lambda x: x[1], reverse=True)
             return best_sentences[0][0].strip()
         
-        # Final fallback - return first substantial sentence
         for sentence in sentences:
             if len(sentence.strip()) > 30:
                 return sentence.strip()
@@ -622,7 +567,6 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
         if not answer or len(answer.strip()) < 10:
             return False
         
-        # Check for generic responses
         generic_phrases = [
             "information about this topic is not available",
             "unable to process",  
@@ -633,24 +577,158 @@ Provide a detailed, accurate answer based ONLY on the context above. Include all
         
         answer_lower = answer.lower()
         
-        # If it's a generic response, only accept if it's detailed
         if any(phrase in answer_lower for phrase in generic_phrases):
             return len(answer) > 60
         
-        # Check relevance
         question_words = set(re.findall(r'\b\w+\b', question.lower()))
         answer_words = set(re.findall(r'\b\w+\b', answer.lower()))
         
-        # Remove stop words
         stop_words = {'what', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
         question_words = question_words - stop_words
         
         overlap = len(question_words & answer_words)
-        return overlap >= 1  # At least 1 meaningful word should match
+        return overlap >= 1
 
-# Initialize global processors
+# Initialize global instances
 doc_processor = DocumentProcessor()
 answer_engine = CompetitionAnswerEngine()
 
-# Export for use by run.py
-__all__ = ['DocumentProcessor', 'CompetitionAnswerEngine', 'doc_processor', 'answer_engine']
+# FastAPI setup
+app = FastAPI(
+    title="HackRx 6.0 - Competition Server",
+    description="Document Q&A system optimized for competition scoring",
+    version="6.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Authentication
+security = HTTPBearer()
+
+async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials.credentials != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return credentials.credentials
+
+# Routes
+@app.get("/")
+async def root():
+    """Root endpoint showing competition status"""
+    competition_features_status = "✅ Available" if GROQ_AVAILABLE else "❌ Import failed"
+    
+    return {
+        "message": "HackRx 6.0 - Competition Server Ready",
+        "status": "ready",
+        "version": "6.0.0",
+        "competition_features": "available" if GROQ_AVAILABLE else "not available",
+        "import_status": competition_features_status,
+        "primary_llm": "Groq (Free tier optimized)" if GROQ_AVAILABLE else "Fallback mode",
+        "endpoints": {
+            "/hackrx/run": "Main competition endpoint (handles both formats)",
+            "/health": "Health check",
+            "/test-processing": "Test document processing",
+            "/competition-status": "Competition readiness check"
+        },
+        "features": [
+            "Advanced PDF extraction",
+            "Groq LLM integration" if GROQ_AVAILABLE else "Rule-based processing",
+            "Semantic search with fallbacks",
+            "Competition scoring optimization",
+            "Multi-format document support"
+        ]
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "message": "HackRx Intelligent Retrieval System is running",
+        "groq_available": GROQ_AVAILABLE,
+        "services": {
+            "vector_store": True,
+            "embedding": SENTENCE_TRANSFORMERS_AVAILABLE,
+            "llm": GROQ_AVAILABLE or OPENAI_AVAILABLE
+        }
+    }
+
+@app.post("/hackrx/run", dependencies=[Depends(verify_api_key)])
+async def hackrx_run(request: QueryRequest) -> QueryResponse:
+    """Main competition endpoint for document Q&A"""
+    start_time = time.time()
+    request_id = str(uuid.uuid4())[:8]
+    
+    try:
+        logger.info(f"[{request_id}] Processing {len(request.questions)} questions")
+        
+        # Process document
+        document_text = await doc_processor.process_document(request.documents)
+        
+        if not document_text:
+            logger.error(f"[{request_id}] Document processing failed")
+            raise HTTPException(status_code=400, detail="Failed to process document")
+        
+        # Prepare for answering
+        answer_engine.prepare_document(document_text)
+        
+        # Generate answers for all questions
+        answers = []
+        for i, question in enumerate(request.questions):
+            logger.info(f"[{request_id}] Processing question {i+1}: {question[:50]}...")
+            answer = await answer_engine.generate_competition_answer(question)
+            answers.append(answer)
+            logger.info(f"[{request_id}] Answer {i+1}: {len(answer)} chars")
+        
+        processing_time = time.time() - start_time
+        logger.info(f"[{request_id}] Complete in {processing_time:.2f}s")
+        
+        return QueryResponse(
+            answers=answers,
+            processing_time=round(processing_time, 2),
+            request_id=request_id,
+            cached=False
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[{request_id}] Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+@app.get("/competition-status")
+async def competition_status():
+    """Competition readiness check"""
+    return {
+        "ready": True,
+        "groq_available": GROQ_AVAILABLE,
+        "openai_available": OPENAI_AVAILABLE,
+        "semantic_search": SENTENCE_TRANSFORMERS_AVAILABLE,
+        "document_processor": True,
+        "answer_engine": True,
+        "endpoint": "/hackrx/run",
+        "authentication": "Bearer token required"
+    }
+
+@app.post("/test-processing")
+async def test_processing():
+    """Test endpoint for basic functionality"""
+    test_url = "https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D"
+    
+    try:
+        text = await doc_processor.process_document(test_url)
+        return {
+            "status": "success",
+            "document_length": len(text),
+            "preview": text[:200] + "..." if text else "No text extracted"
+        }
+    except Exception as e:
+        return {
+            "status": "failed",
+            "error": str(e)
+        }

@@ -37,7 +37,7 @@ try:
     # Try multiple import strategies
     try:
         # Strategy 1: Import from app.main
-        from app.main import (
+        from app.competition import (
             DocumentProcessor,
             CompetitionAnswerEngine,
             doc_processor,
@@ -49,20 +49,20 @@ try:
         try:
             # Strategy 2: Import from main (after adding app to path)
             import main
-            DocumentProcessor = main.DocumentProcessor
-            CompetitionAnswerEngine = main.CompetitionAnswerEngine
-            doc_processor = main.doc_processor
-            answer_engine = main.answer_engine
+            DocumentProcessor = competition.DocumentProcessor
+            CompetitionAnswerEngine = competition.CompetitionAnswerEngine
+            doc_processor = competition.doc_processor
+            answer_engine = competition.answer_engine
             COMPETITION_FEATURES_AVAILABLE = True
             logger.info("✅ Competition features imported from main")
         except ImportError:
             try:
                 # Strategy 3: Manual import and instantiation
-                from app import main
-                DocumentProcessor = main.DocumentProcessor
-                CompetitionAnswerEngine = main.CompetitionAnswerEngine
-                doc_processor = main.DocumentProcessor()
-                answer_engine = main.CompetitionAnswerEngine()
+                from app import competition
+                DocumentProcessor = competition.DocumentProcessor
+                CompetitionAnswerEngine = competition.CompetitionAnswerEngine
+                doc_processor = competition.DocumentProcessor()
+                answer_engine = competition.CompetitionAnswerEngine()
                 COMPETITION_FEATURES_AVAILABLE = True
                 logger.info("✅ Competition features imported and instantiated manually")
             except ImportError as e:
