@@ -6,6 +6,7 @@ Works with ANY document type, NO templates, completely dynamic responses
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 import aiohttp
 import PyPDF2
 import docx
@@ -42,6 +43,19 @@ security = HTTPBearer()
 
 # API Key
 HACKRX_API_KEY = "6d2683f80eca9847d20948e1e5508885d08fdc65d943182f85de250687859193"
+
+# ADD THESE PYDANTIC MODELS FOR YOUR ORIGINAL ENDPOINT
+class QueryRequest(BaseModel):
+    data: list
+
+class QueryResponse(BaseModel):
+    is_success: bool
+    user_id: str
+    email: str
+    roll_number: str
+    numbers: list
+    alphabets: list
+    highest_lowercase_alphabet: list
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify API key authentication"""
@@ -368,7 +382,32 @@ class DynamicAnswerGenerator:
 doc_processor = UniversalDocumentProcessor()
 answer_generator = DynamicAnswerGenerator()
 
+# ADD YOUR ORIGINAL ENDPOINT HERE (for the competition)
 @app.post("/hackrx/run")
+async def process_data(request: QueryRequest):
+    """Original endpoint for the competition"""
+    try:
+        data = request.data
+        
+        numbers = [item for item in data if item.isdigit()]
+        alphabets = [item for item in data if item.isalpha()]
+        lowercase_alphabets = [item for item in alphabets if item.islower()]
+        highest_lowercase = [max(lowercase_alphabets)] if lowercase_alphabets else []
+        
+        return QueryResponse(
+            is_success=True,
+            user_id="patel",
+            email="aryanpatel77462@gmail.com",
+            roll_number="1047",
+            numbers=numbers,
+            alphabets=alphabets,
+            highest_lowercase_alphabet=highest_lowercase
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Document processing endpoint (separate endpoint)
+@app.post("/hackrx/document")
 async def hackrx_universal_endpoint(
     request: Request,
     api_key: str = Depends(verify_api_key)
@@ -428,15 +467,20 @@ async def hackrx_universal_endpoint(
 async def root():
     """Root endpoint"""
     return {
-        "message": "HackRx 6.0 - Universal Document AI",
+        "message": "HackRx 6.0 - Universal Document AI + Competition API",
         "status": "ready",
         "version": "6.0.0",
+        "endpoints": {
+            "/hackrx/run": "Competition endpoint for data processing",
+            "/hackrx/document": "Document processing endpoint"
+        },
         "features": [
             "Universal document processing (PDF, DOCX, TXT)",
             "100% dynamic responses (no templates)",
             "Intelligent context extraction",
             "Multi-format document support",
-            "Clean JSON output format"
+            "Clean JSON output format",
+            "Competition data processing"
         ]
     }
 
@@ -445,7 +489,4 @@ async def health():
     """Health check"""
     return {"status": "healthy", "version": "6.0.0"}
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
+# Remove the if __name__ == "__main__" section for production deployment
