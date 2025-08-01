@@ -1,27 +1,31 @@
-# fastapi==0.115.0
-# uvicorn[standard]==0.32.1
-# aiohttp==3.10.11
-# PyPDF2==3.0.1
-# python-docx==1.1.2
-# openai==1.57.0
-# groq==0.13.0
-# pydantic==2.10.3
-# pydantic-settings==2.7.0
-# python-dotenv==1.0.1
-# python-dateutil==2.9.0.post0
-
-
-
-
+# requirements.txt - Render Compatible (Python 3.11)
+# Core FastAPI
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
-python-multipart==0.0.6
-aiohttp==3.9.1
-PyPDF2==3.0.1
-numpy==1.24.3
-groq==0.4.1
+
+# Web and async
+aiohttp==3.9.5
 requests==2.31.0
-python-dotenv==1.0.0
-gunicorn==21.2.0
+python-multipart==0.0.6
+
+# Document processing
+PyPDF2==3.0.1
 python-docx==1.1.0
+
+# Scientific computing (compatible versions)
+numpy
+
+# LLM
+groq==0.4.1
+
+# Utilities
+python-dotenv==1.0.0
+
+# Server
+gunicorn==21.2.0
+
+# Build tools (fix for Python 3.13 issue)
+setuptools>=65.0.0
+wheel>=0.37.0
+packaging>=21.0
