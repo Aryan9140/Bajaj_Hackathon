@@ -1,0 +1,11 @@
+# Minimal requirements.txt
+fastapi
+uvicorn[standard]
+pydantic
+aiohttp
+requests
+PyPDF2
+numpy
+groq
+python-dotenv
+gunicorn
