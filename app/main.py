@@ -1,21 +1,26 @@
-# app/main.py - HackRx 6.0 Competition - Optimized for Maximum Accuracy
+# app/main.py - ULTRA DYNAMIC SYSTEM - Maximum Accuracy, No Templates
 import os
 import re
 import time
-import hashlib
-import asyncio
 import logging
 import uuid
-from typing import List, Optional, Dict, Any
+import json
+import asyncio
+import hashlib
+import math
+from typing import List, Optional, Dict, Any, Tuple, Set
 from datetime import datetime
+from collections import defaultdict, Counter
+from dataclasses import dataclass
 
 # FastAPI imports
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-# Safe imports for Render deployment
+# Advanced imports for document processing
 try:
     import aiohttp
     AIOHTTP_AVAILABLE = True
@@ -25,21 +30,15 @@ except ImportError:
 try:
     import PyPDF2
     import io
-    PYPDF2_AVAILABLE = True
+    PDF_AVAILABLE = True
 except ImportError:
-    PYPDF2_AVAILABLE = False
+    PDF_AVAILABLE = False
 
 try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
+    import docx
+    DOCX_AVAILABLE = True
 except ImportError:
-    NUMPY_AVAILABLE = False
-
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
+    DOCX_AVAILABLE = False
 
 try:
     import requests
@@ -47,750 +46,1117 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+
+# Configure advanced logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Environment variables
+# Environment configuration
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-API_KEY = "6d2683f80eca9847d20948e1e5508885d08fdc65d943182f85de250687859193"
+API_KEY = os.getenv("API_KEY", "6d2683f80eca9847d20948e1e5508885d08fdc65d943182f85de250687859193")
 
 # Pydantic models
-class DocumentRequest(BaseModel):
-    documents: str = Field(..., description="Document URL to process")
+class CompetitionRequest(BaseModel):
+    documents: str = Field(..., description="Document URL or content")
     questions: List[str] = Field(..., description="List of questions to answer")
 
-class DocumentResponse(BaseModel):
-    answers: List[str] = Field(..., description="Detailed answers to questions")
+class CompetitionResponse(BaseModel):
+    answers: List[str] = Field(..., description="List of precise answers")
 
-class SimpleRequest(BaseModel):
-    data: List[str] = Field(..., description="List of data items")
+class ProcessingStats(BaseModel):
+    processing_time: float
+    document_length: int
+    questions_processed: int
+    accuracy_score: float
+    confidence_level: str
 
-class SimpleResponse(BaseModel):
-    is_success: bool
-    user_id: str
-    email: str
-    roll_number: str
-    numbers: List[str]
-    alphabets: List[str]
-    highest_lowercase_alphabet: List[str]
+@dataclass
+class DocumentChunk:
+    """Structured document chunk with metadata"""
+    content: str
+    chunk_id: str
+    page_number: Optional[int]
+    start_char: int
+    end_char: int
+    content_type: str
+    relevance_score: float = 0.0
+    keywords: List[str] = None
+
+@dataclass
+class ContextMatch:
+    """Context match with scoring"""
+    text: str
+    confidence: float
+    relevance: float
+    chunk_source: str
+    keyword_matches: List[str]
+    semantic_score: float
 
 class AdvancedDocumentProcessor:
-    """
-    Advanced document processor optimized for maximum accuracy
-    Works dynamically with any PDF without code changes
-    """
+    """Ultra-advanced document processor for any format"""
     
     def __init__(self):
-        self.cache = {}
-        self.supported_formats = ['.pdf', '.docx', '.txt']
-        logger.info("Advanced DocumentProcessor initialized for competition accuracy")
+        self.session = None
+        self.processed_cache = {}
+        self.content_extractors = {
+            'pdf': self._extract_pdf_content,
+            'docx': self._extract_docx_content,
+            'txt': self._extract_text_content,
+            'html': self._extract_html_content
+        }
+        logger.info("AdvancedDocumentProcessor initialized with multi-format support")
     
-    async def download_document(self, url: str) -> Optional[bytes]:
-        """Download document with multiple fallback strategies"""
-        url_hash = hashlib.md5(url.encode()).hexdigest()
-        if url_hash in self.cache:
-            logger.info("Document retrieved from cache")
-            return self.cache[url_hash]
-        
-        # Strategy 1: aiohttp (preferred)
-        if AIOHTTP_AVAILABLE:
-            content = await self._download_with_aiohttp(url)
-            if content:
-                self.cache[url_hash] = content
-                return content
-        
-        # Strategy 2: requests (fallback)
-        if REQUESTS_AVAILABLE:
-            content = self._download_with_requests(url)
-            if content:
-                self.cache[url_hash] = content
-                return content
-        
-        logger.error("All download methods failed")
-        return None
+    async def get_session(self):
+        """Get or create HTTP session with advanced configuration"""
+        if not self.session and AIOHTTP_AVAILABLE:
+            timeout = aiohttp.ClientTimeout(total=120, connect=30)
+            connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
+            self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+        return self.session
     
-    async def _download_with_aiohttp(self, url: str) -> Optional[bytes]:
-        """Download using aiohttp with retry logic"""
-        max_retries = 5
-        backoff_delays = [1, 2, 4, 8, 16]
-        
-        for attempt in range(max_retries):
-            try:
-                timeout = aiohttp.ClientTimeout(total=120)
-                connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-                
-                async with aiohttp.ClientSession(
-                    timeout=timeout, 
-                    connector=connector
-                ) as session:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'application/pdf,application/octet-stream,*/*',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Cache-Control': 'no-cache'
-                    }
-                    
-                    async with session.get(url, headers=headers) as response:
-                        if response.status == 200:
-                            content = await response.read()
-                            logger.info(f"Document downloaded successfully: {len(content)} bytes")
-                            return content
-                        else:
-                            logger.warning(f"Download failed with status {response.status}")
-                            
-            except Exception as e:
-                logger.warning(f"aiohttp attempt {attempt + 1} failed: {e}")
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(backoff_delays[attempt])
-        
-        return None
-    
-    def _download_with_requests(self, url: str) -> Optional[bytes]:
-        """Download using requests as fallback"""
+    async def process_document(self, url_or_content: str) -> Dict[str, Any]:
+        """Advanced document processing with format detection"""
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            # Check if it's a URL or direct content
+            if url_or_content.startswith(('http://', 'https://')):
+                document_data = await self._fetch_from_url(url_or_content)
+            else:
+                document_data = {'content': url_or_content, 'format': 'text'}
+            
+            if not document_data.get('content'):
+                raise ValueError("No content extracted from document")
+            
+            # Process content into structured chunks
+            chunks = self._create_document_chunks(document_data['content'])
+            
+            # Extract metadata and statistics
+            metadata = self._analyze_document_structure(document_data['content'])
+            
+            return {
+                'raw_content': document_data['content'],
+                'chunks': chunks,
+                'metadata': metadata,
+                'format': document_data.get('format', 'unknown'),
+                'processing_time': time.time()
             }
-            response = requests.get(url, headers=headers, timeout=60, stream=True)
-            response.raise_for_status()
-            content = response.content
-            logger.info(f"Document downloaded via requests: {len(content)} bytes")
-            return content
+            
         except Exception as e:
-            logger.error(f"Requests download failed: {e}")
-            return None
+            logger.error(f"Document processing failed: {str(e)}")
+            raise ValueError(f"Failed to process document: {str(e)}")
     
-    def extract_text_from_pdf(self, pdf_data: bytes) -> str:
-        """Advanced PDF text extraction optimized for accuracy"""
-        if not PYPDF2_AVAILABLE:
-            logger.error("PyPDF2 not available - using fallback text extraction")
-            return self._fallback_text_extraction(pdf_data)
+    async def _fetch_from_url(self, url: str) -> Dict[str, Any]:
+        """Fetch and identify document format from URL"""
+        session = await self.get_session()
+        if not session:
+            raise ValueError("HTTP session not available")
+        
+        try:
+            logger.info(f"Fetching document from: {url[:100]}...")
+            
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise ValueError(f"HTTP {response.status}: Failed to fetch document")
+                
+                content_type = response.headers.get('content-type', '').lower()
+                content_data = await response.read()
+                
+                logger.info(f"Downloaded {len(content_data)} bytes, type: {content_type}")
+                
+                # Determine format and extract content
+                if 'pdf' in content_type or url.lower().endswith('.pdf'):
+                    content = await self._extract_pdf_content(content_data)
+                    doc_format = 'pdf'
+                elif 'word' in content_type or url.lower().endswith(('.docx', '.doc')):
+                    content = await self._extract_docx_content(content_data)
+                    doc_format = 'docx'
+                elif 'text' in content_type or url.lower().endswith('.txt'):
+                    content = content_data.decode('utf-8', errors='ignore')
+                    doc_format = 'text'
+                else:
+                    # Try PDF first as default
+                    try:
+                        content = await self._extract_pdf_content(content_data)
+                        doc_format = 'pdf'
+                    except:
+                        content = content_data.decode('utf-8', errors='ignore')
+                        doc_format = 'text'
+                
+                return {'content': content, 'format': doc_format}
+                
+        except Exception as e:
+            logger.error(f"URL fetch failed: {str(e)}")
+            raise ValueError(f"Failed to fetch from URL: {str(e)}")
+    
+    async def _extract_pdf_content(self, pdf_data: bytes) -> str:
+        """Advanced PDF content extraction"""
+        if not PDF_AVAILABLE:
+            raise ValueError("PDF processing not available")
         
         try:
             pdf_file = io.BytesIO(pdf_data)
             pdf_reader = PyPDF2.PdfReader(pdf_file)
             
-            text_parts = []
+            content_parts = []
             total_pages = len(pdf_reader.pages)
-            logger.info(f"Processing PDF with {total_pages} pages for maximum accuracy")
+            
+            logger.info(f"Processing {total_pages} PDF pages")
             
             for page_num, page in enumerate(pdf_reader.pages):
                 try:
-                    # Multiple extraction strategies for better accuracy
-                    page_texts = []
+                    # Extract text with multiple methods
+                    text = page.extract_text()
                     
-                    # Strategy 1: Standard extraction
-                    try:
-                        text1 = page.extract_text()
-                        if text1 and len(text1.strip()) > 10:
-                            page_texts.append(text1)
-                    except:
-                        pass
-                    
-                    # Strategy 2: Alternative extraction method
-                    try:
-                        if hasattr(page, 'extract_text'):
-                            text2 = page.extract_text(space_width=200)
-                            if text2 and len(text2.strip()) > 10:
-                                page_texts.append(text2)
-                    except:
-                        pass
-                    
-                    # Choose the best extraction
-                    if page_texts:
-                        # Select the longest text as it's likely more complete
-                        best_text = max(page_texts, key=len)
-                        cleaned_text = self.advanced_text_cleaning(best_text)
+                    if text.strip():
+                        # Clean and structure the text
+                        cleaned_text = self._advanced_text_cleaning(text)
                         if cleaned_text:
-                            text_parts.append(cleaned_text)
-                            logger.debug(f"Page {page_num + 1}: {len(cleaned_text)} chars extracted")
-                    else:
-                        logger.warning(f"No text extracted from page {page_num + 1}")
-                        
+                            content_parts.append(f"[PAGE {page_num + 1}]\n{cleaned_text}")
+                    
                 except Exception as e:
-                    logger.warning(f"Error processing page {page_num + 1}: {e}")
+                    logger.warning(f"Page {page_num + 1} extraction failed: {e}")
                     continue
             
-            # Intelligent page combining for maximum accuracy
-            full_text = self.intelligent_page_combination(text_parts)
-            logger.info(f"PDF extraction complete: {len(full_text)} chars from {len(text_parts)} pages")
+            combined_content = "\n\n".join(content_parts)
+            logger.info(f"Extracted {len(combined_content)} characters from PDF")
             
-            return full_text
-            
-        except Exception as e:
-            logger.error(f"PDF extraction failed: {e}")
-            return self._fallback_text_extraction(pdf_data)
-    
-    def _fallback_text_extraction(self, data: bytes) -> str:
-        """Fallback text extraction when PyPDF2 fails"""
-        try:
-            # Try to decode as UTF-8 text
-            text = data.decode('utf-8', errors='ignore')
-            if len(text.strip()) > 100:
-                return self.advanced_text_cleaning(text)
-        except:
-            pass
-        
-        try:
-            # Try Latin-1 encoding
-            text = data.decode('latin-1', errors='ignore')
-            if len(text.strip()) > 100:
-                return self.advanced_text_cleaning(text)
-        except:
-            pass
-        
-        logger.error("All text extraction methods failed")
-        return ""
-    
-    def advanced_text_cleaning(self, text: str) -> str:
-        """Advanced text cleaning for maximum accuracy"""
-        if not text:
-            return ""
-        
-        # Phase 1: Fix broken words and hyphenation
-        text = re.sub(r'(\w)-\s*\n\s*(\w)', r'\1\2', text)
-        text = re.sub(r'(\w)\s*-\s*\n\s*(\w)', r'\1\2', text)
-        
-        # Phase 2: Fix spacing and formatting
-        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
-        text = re.sub(r'(\d+)([A-Za-z])', r'\1 \2', text)
-        text = re.sub(r'([A-Za-z])(\d+)', r'\1 \2', text)
-        text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
-        text = re.sub(r'([,;:])([A-Za-z])', r'\1 \2', text)
-        
-        # Phase 3: Clean whitespace
-        text = re.sub(r'[ \t]+', ' ', text)
-        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
-        text = re.sub(r'[ ]*\n[ ]*', '\n', text)
-        
-        # Phase 4: Remove artifacts and noise
-        lines = []
-        for line in text.split('\n'):
-            line = line.strip()
-            
-            # Skip empty lines
-            if not line:
-                continue
-            
-            # Skip page numbers (standalone numbers)
-            if re.match(r'^\d{1,4}$', line):
-                continue
-            
-            # Skip lines with only special characters
-            if re.match(r'^[^\w\s]*$', line):
-                continue
-            
-            # Skip very short lines (likely artifacts)
-            if len(line) < 3:
-                continue
-            
-            # Skip headers/footers (all caps short lines)
-            if len(line) < 50 and line.isupper():
-                continue
-            
-            lines.append(line)
-        
-        # Phase 5: Intelligent sentence reconstruction
-        cleaned_text = self.reconstruct_sentences(lines)
-        
-        return cleaned_text
-    
-    def reconstruct_sentences(self, lines: List[str]) -> str:
-        """Reconstruct proper sentences from cleaned lines"""
-        if not lines:
-            return ""
-        
-        reconstructed = []
-        current_sentence = ""
-        
-        for line in lines:
-            line = line.strip()
-            
-            # If line ends with sentence terminator, it's complete
-            if re.search(r'[.!?]\s*$', line):
-                if current_sentence:
-                    reconstructed.append(current_sentence + " " + line)
-                    current_sentence = ""
-                else:
-                    reconstructed.append(line)
-            
-            # If line ends with colon, it's likely complete
-            elif line.endswith(':'):
-                if current_sentence:
-                    reconstructed.append(current_sentence + " " + line)
-                    current_sentence = ""
-                else:
-                    reconstructed.append(line)
-            
-            # Otherwise, accumulate the sentence
-            else:
-                if current_sentence:
-                    current_sentence += " " + line
-                else:
-                    current_sentence = line
-        
-        # Add any remaining sentence
-        if current_sentence:
-            reconstructed.append(current_sentence)
-        
-        return '\n\n'.join(reconstructed)
-    
-    def intelligent_page_combination(self, text_parts: List[str]) -> str:
-        """Intelligently combine pages maintaining context"""
-        if not text_parts:
-            return ""
-        
-        if len(text_parts) == 1:
-            return text_parts[0]
-        
-        combined = []
-        
-        for i, part in enumerate(text_parts):
-            if i == 0:
-                combined.append(part)
-            else:
-                prev_part = text_parts[i-1].strip()
-                current_part = part.strip()
-                
-                # Check if previous part ends properly
-                if prev_part and re.search(r'[.!?:]\s*$', prev_part):
-                    # Previous part ends properly, start new paragraph
-                    combined.append('\n\n' + current_part)
-                elif prev_part and not re.search(r'[.!?:]\s*$', prev_part):
-                    # Previous part doesn't end properly, likely continuation
-                    combined.append(' ' + current_part)
-                else:
-                    combined.append('\n\n' + current_part)
-        
-        return ''.join(combined)
-    
-    async def process_document(self, document_url: str) -> str:
-        """Main document processing method - works with any PDF dynamically"""
-        start_time = time.time()
-        
-        try:
-            logger.info(f"Processing document: {document_url[:100]}...")
-            
-            # Download document
-            document_data = await self.download_document(document_url)
-            if not document_data:
-                logger.error("Failed to download document")
-                return ""
-            
-            # Determine file type and process accordingly
-            extracted_text = ""
-            
-            if document_data.startswith(b'%PDF'):
-                logger.info("Detected PDF format - using advanced PDF extraction")
-                extracted_text = self.extract_text_from_pdf(document_data)
-            
-            elif document_data.startswith(b'PK'):
-                logger.info("Detected DOCX format - using DOCX extraction")
-                extracted_text = self.extract_text_from_docx(document_data)
-            
-            else:
-                logger.info("Detected text format - using text extraction")
-                extracted_text = document_data.decode('utf-8', errors='ignore')
-                extracted_text = self.advanced_text_cleaning(extracted_text)
-            
-            # Final validation and cleanup
-            final_text = self.final_validation_and_cleanup(extracted_text)
-            
-            processing_time = time.time() - start_time
-            logger.info(f"Document processed successfully in {processing_time:.2f}s: {len(final_text)} characters")
-            
-            return final_text
+            return combined_content
             
         except Exception as e:
-            logger.error(f"Document processing failed: {e}")
-            return ""
+            logger.error(f"PDF extraction failed: {str(e)}")
+            raise ValueError(f"PDF processing error: {str(e)}")
     
-    def extract_text_from_docx(self, docx_data: bytes) -> str:
-        """Extract text from DOCX documents"""
+    async def _extract_docx_content(self, docx_data: bytes) -> str:
+        """Extract content from DOCX files"""
+        if not DOCX_AVAILABLE:
+            raise ValueError("DOCX processing not available")
+        
         try:
-            # Try to import python-docx
-            import docx
+            doc_file = io.BytesIO(docx_data)
+            doc = docx.Document(doc_file)
             
-            docx_file = io.BytesIO(docx_data)
-            document = docx.Document(docx_file)
+            content_parts = []
             
-            text_parts = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    content_parts.append(para.text.strip())
             
-            # Extract paragraph text
-            for paragraph in document.paragraphs:
-                if paragraph.text.strip():
-                    text_parts.append(paragraph.text.strip())
-            
-            # Extract table text
-            for table in document.tables:
+            # Extract tables if present
+            for table in doc.tables:
                 for row in table.rows:
-                    row_text = []
-                    for cell in row.cells:
-                        if cell.text.strip():
-                            row_text.append(cell.text.strip())
-                    if row_text:
-                        text_parts.append(' | '.join(row_text))
+                    row_text = " | ".join(cell.text.strip() for cell in row.cells)
+                    if row_text.strip():
+                        content_parts.append(f"[TABLE] {row_text}")
             
-            return '\n\n'.join(text_parts)
+            combined_content = "\n".join(content_parts)
+            logger.info(f"Extracted {len(combined_content)} characters from DOCX")
             
-        except ImportError:
-            logger.warning("python-docx not available, treating as text")
-            return docx_data.decode('utf-8', errors='ignore')
+            return combined_content
+            
         except Exception as e:
-            logger.error(f"DOCX extraction failed: {e}")
+            logger.error(f"DOCX extraction failed: {str(e)}")
+            raise ValueError(f"DOCX processing error: {str(e)}")
+    
+    async def _extract_text_content(self, text_data: bytes) -> str:
+        """Extract and clean plain text content"""
+        try:
+            content = text_data.decode('utf-8', errors='ignore')
+            cleaned_content = self._advanced_text_cleaning(content)
+            logger.info(f"Processed {len(cleaned_content)} characters from text")
+            return cleaned_content
+        except Exception as e:
+            logger.error(f"Text extraction failed: {str(e)}")
             return ""
     
-    def final_validation_and_cleanup(self, text: str) -> str:
-        """Final validation and cleanup for competition accuracy"""
-        if not text or len(text.strip()) < 50:
-            logger.warning("Extracted text too short or empty")
-            return text
-        
-        # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
-        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
-        
-        # Ensure proper sentence endings
-        text = re.sub(r'([a-z])\s*\n\s*([A-Z])', r'\1. \2', text)
-        
-        # Final cleanup
-        text = text.strip()
-        
-        # Statistics for debugging
-        word_count = len(text.split())
-        char_count = len(text)
-        sentence_count = len(re.findall(r'[.!?]+', text))
-        
-        logger.info(f"Final text statistics: {char_count} chars, {word_count} words, {sentence_count} sentences")
-        
-        return text
-
-class CompetitionAnswerEngine:
-    """
-    Competition Answer Engine optimized for maximum accuracy and leaderboard scoring
-    Uses advanced LLM strategies for precise answers
-    """
+    async def _extract_html_content(self, html_data: bytes) -> str:
+        """Extract text from HTML content"""
+        try:
+            import re
+            html_content = html_data.decode('utf-8', errors='ignore')
+            # Remove HTML tags
+            text_content = re.sub(r'<[^>]+>', ' ', html_content)
+            cleaned_content = self._advanced_text_cleaning(text_content)
+            logger.info(f"Extracted {len(cleaned_content)} characters from HTML")
+            return cleaned_content
+        except Exception as e:
+            logger.error(f"HTML extraction failed: {str(e)}")
+            return ""
     
-    def __init__(self):
-        self.groq_client = None
-        self.document_text = ""
-        self.document_chunks = []
-        
-        # Initialize Groq client
-        if GROQ_AVAILABLE and GROQ_API_KEY:
-            try:
-                self.groq_client = Groq(api_key=GROQ_API_KEY)
-                logger.info("Groq client initialized for competition accuracy")
-            except Exception as e:
-                logger.error(f"Groq initialization failed: {e}")
-        else:
-            logger.warning("Groq not available - using fallback methods")
-    
-    def prepare_document(self, document_text: str):
-        """Prepare document with advanced chunking for maximum accuracy"""
-        self.document_text = document_text
-        self.document_chunks = self.create_intelligent_chunks(document_text)
-        logger.info(f"Document prepared: {len(document_text)} chars, {len(self.document_chunks)} chunks")
-    
-    def create_intelligent_chunks(self, text: str) -> List[Dict[str, Any]]:
-        """Create intelligent chunks with context preservation"""
+    def _advanced_text_cleaning(self, text: str) -> str:
+        """Advanced text cleaning and normalization"""
         if not text:
-            return []
+            return ""
         
-        # Split by double newlines (paragraphs) and periods for sentences
-        paragraphs = re.split(r'\n\n+', text)
+        # Remove excessive whitespace while preserving structure
+        text = re.sub(r'\n\s*\n', '\n\n', text)
+        text = re.sub(r'[ \t]+', ' ', text)
+        
+        # Remove common PDF artifacts
+        text = re.sub(r'Page \d+ of \d+', '', text)
+        text = re.sub(r'CBD[-\s]\d+[^a-zA-Z]*Kolkata[-\s]\d+', '', text)
+        
+        # Normalize special characters
+        text = text.replace('\u2019', "'").replace('\u2018', "'")
+        text = text.replace('\u201c', '"').replace('\u201d', '"')
+        text = text.replace('\u2013', '-').replace('\u2014', '-')
+        
+        # Remove isolated numbers and letters
+        text = re.sub(r'\n[0-9a-zA-Z]\n', '\n', text)
+        
+        # Clean up spacing
+        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r'\n\s+', '\n', text)
+        
+        return text.strip()
+    
+    def _create_document_chunks(self, content: str) -> List[DocumentChunk]:
+        """Create structured document chunks for processing"""
         chunks = []
         
-        for para_idx, paragraph in enumerate(paragraphs):
-            paragraph = paragraph.strip()
-            if len(paragraph) < 50:
-                continue
-            
-            # If paragraph is short enough, keep as one chunk
-            if len(paragraph) <= 800:
-                chunks.append({
-                    'text': paragraph,
-                    'paragraph_index': para_idx,
-                    'type': 'paragraph'
-                })
-            else:
-                # Split long paragraphs by sentences
-                sentences = re.split(r'[.!?]+', paragraph)
-                current_chunk = ""
-                
-                for sentence in sentences:
-                    sentence = sentence.strip()
-                    if not sentence:
-                        continue
-                    
-                    if len(current_chunk) + len(sentence) + 50 <= 800:
-                        current_chunk += sentence + ". "
-                    else:
-                        if current_chunk:
-                            chunks.append({
-                                'text': current_chunk.strip(),
-                                'paragraph_index': para_idx,
-                                'type': 'sentence_group'
-                            })
-                        current_chunk = sentence + ". "
-                
-                if current_chunk:
-                    chunks.append({
-                        'text': current_chunk.strip(),
-                        'paragraph_index': para_idx,
-                        'type': 'sentence_group'
-                    })
+        # Split by logical sections
+        sections = self._identify_document_sections(content)
         
-        logger.info(f"Created {len(chunks)} intelligent chunks")
+        chunk_id_counter = 0
+        for section_type, section_content in sections:
+            # Further split large sections
+            if len(section_content) > 1000:
+                sub_chunks = self._split_large_content(section_content)
+                for sub_chunk in sub_chunks:
+                    chunks.append(DocumentChunk(
+                        content=sub_chunk,
+                        chunk_id=f"chunk_{chunk_id_counter}",
+                        page_number=None,
+                        start_char=0,
+                        end_char=len(sub_chunk),
+                        content_type=section_type,
+                        keywords=self._extract_keywords(sub_chunk)
+                    ))
+                    chunk_id_counter += 1
+            else:
+                chunks.append(DocumentChunk(
+                    content=section_content,
+                    chunk_id=f"chunk_{chunk_id_counter}",
+                    page_number=None,
+                    start_char=0,
+                    end_char=len(section_content),
+                    content_type=section_type,
+                    keywords=self._extract_keywords(section_content)
+                ))
+                chunk_id_counter += 1
+        
+        logger.info(f"Created {len(chunks)} document chunks")
         return chunks
     
-    def find_relevant_chunks(self, question: str, top_k: int = 5) -> List[Dict[str, Any]]:
-        """Find most relevant chunks using advanced matching"""
-        if not self.document_chunks:
-            return []
+    def _identify_document_sections(self, content: str) -> List[Tuple[str, str]]:
+        """Identify different sections in the document"""
+        sections = []
         
+        # Split by double newlines first
+        paragraphs = content.split('\n\n')
+        
+        current_section = ""
+        current_type = "content"
+        
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+            
+            # Identify section types
+            if self._is_header(para):
+                if current_section:
+                    sections.append((current_type, current_section.strip()))
+                current_section = para
+                current_type = "header"
+            elif self._is_table_row(para):
+                if current_type != "table":
+                    if current_section:
+                        sections.append((current_type, current_section.strip()))
+                    current_section = para
+                    current_type = "table"
+                else:
+                    current_section += "\n" + para
+            else:
+                if current_type == "header":
+                    current_section += "\n" + para
+                    current_type = "content"
+                else:
+                    current_section += "\n" + para
+        
+        if current_section:
+            sections.append((current_type, current_section.strip()))
+        
+        return sections
+    
+    def _is_header(self, text: str) -> bool:
+        """Identify if text is likely a header"""
+        return (len(text) < 100 and 
+                (text.isupper() or 
+                 any(char in text for char in [':', '•', '-']) and len(text.split()) < 10))
+    
+    def _is_table_row(self, text: str) -> bool:
+        """Identify if text is likely a table row"""
+        return "|" in text or "\t" in text or (len(text.split()) > 5 and any(char.isdigit() for char in text))
+    
+    def _split_large_content(self, content: str, max_chunk_size: int = 1000) -> List[str]:
+        """Split large content into manageable chunks"""
+        if len(content) <= max_chunk_size:
+            return [content]
+        
+        chunks = []
+        sentences = re.split(r'[.!?]+', content)
+        
+        current_chunk = ""
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            
+            if len(current_chunk) + len(sentence) > max_chunk_size:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = sentence
+            else:
+                current_chunk += ". " + sentence if current_chunk else sentence
+        
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        
+        return chunks
+    
+    def _extract_keywords(self, text: str) -> List[str]:
+        """Extract important keywords from text"""
+        # Simple keyword extraction
+        words = re.findall(r'\b\w{4,}\b', text.lower())
+        
+        # Filter out common words
+        common_words = {'this', 'that', 'with', 'have', 'will', 'from', 'they', 'been', 'said', 'each', 'which', 'their', 'time', 'would', 'there', 'could', 'other', 'more', 'very', 'what', 'know', 'just', 'first', 'into', 'over', 'think', 'also', 'your', 'work', 'life', 'only', 'can', 'still', 'should', 'after', 'being', 'now', 'made', 'before', 'here', 'through', 'when', 'where', 'much', 'some', 'these', 'many', 'then', 'them', 'well', 'were'}
+        
+        keywords = [word for word in words if word not in common_words and len(word) > 3]
+        
+        # Count frequency and return top keywords
+        keyword_counts = Counter(keywords)
+        return [word for word, count in keyword_counts.most_common(20)]
+    
+    def _analyze_document_structure(self, content: str) -> Dict[str, Any]:
+        """Analyze document structure and extract metadata"""
+        return {
+            'total_length': len(content),
+            'paragraph_count': len(content.split('\n\n')),
+            'sentence_count': len(re.split(r'[.!?]+', content)),
+            'word_count': len(content.split()),
+            'has_numbers': bool(re.search(r'\d+', content)),
+            'has_percentages': bool(re.search(r'\d+%', content)),
+            'has_dates': bool(re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', content)),
+            'complexity_score': self._calculate_complexity_score(content)
+        }
+    
+    def _calculate_complexity_score(self, content: str) -> float:
+        """Calculate document complexity score"""
+        words = content.split()
+        if not words:
+            return 0.0
+        
+        avg_word_length = sum(len(word) for word in words) / len(words)
+        sentence_count = len(re.split(r'[.!?]+', content))
+        avg_sentence_length = len(words) / max(sentence_count, 1)
+        
+        # Simple complexity calculation
+        complexity = (avg_word_length * 0.3) + (avg_sentence_length * 0.02)
+        return min(complexity, 10.0)
+    
+    async def close(self):
+        """Clean up resources"""
+        if self.session:
+            await self.session.close()
+
+class IntelligentContextMatcher:
+    """Advanced context matching with semantic understanding"""
+    
+    def __init__(self):
+        self.similarity_cache = {}
+        logger.info("IntelligentContextMatcher initialized")
+    
+    def find_relevant_contexts(self, question: str, chunks: List[DocumentChunk], top_k: int = 5) -> List[ContextMatch]:
+        """Find most relevant contexts for a question using advanced matching"""
         question_lower = question.lower()
+        question_tokens = self._tokenize_advanced(question_lower)
         
-        # Enhanced keyword patterns for different document types
-        keyword_patterns = {
-            "grace_period": ["grace period", "grace", "days", "payment", "premium", "due date", "lapse"],
-            "waiting_period": ["waiting period", "waiting", "months", "years", "continuous", "coverage", "pre-existing"],
-            "maternity": ["maternity", "pregnancy", "childbirth", "delivery", "termination", "pregnancy expenses"],
-            "cataract": ["cataract", "eye surgery", "lens", "surgery", "ophthalmology"],
-            "organ_donor": ["organ donor", "transplantation", "harvesting", "medical expenses", "donor coverage"],
-            "discount": ["discount", "ncd", "no claim", "premium", "renewal", "bonus"],
-            "health_check": ["health check", "preventive", "reimbursement", "policy years", "checkup"],
-            "hospital": ["hospital", "institution", "beds", "qualified", "medical", "practitioners", "definition"],
-            "ayush": ["ayush", "ayurveda", "yoga", "naturopathy", "unani", "siddha", "homeopathy", "alternative medicine"],
-            "room_rent": ["room rent", "icu", "charges", "sum insured", "limit", "daily", "accommodation"],
-            "coverage": ["cover", "coverage", "benefit", "expense", "treatment", "medical"],
-            "exclusion": ["exclude", "exclusion", "not covered", "limitation", "restriction"],
-            "claim": ["claim", "reimbursement", "settlement", "payment", "procedure"]
+        context_matches = []
+        
+        for chunk in chunks:
+            match_score = self._calculate_relevance_score(question_tokens, chunk)
+            
+            if match_score > 0.1:  # Minimum relevance threshold
+                context_match = ContextMatch(
+                    text=chunk.content,
+                    confidence=match_score,
+                    relevance=match_score,
+                    chunk_source=chunk.chunk_id,
+                    keyword_matches=self._find_keyword_matches(question_tokens, chunk.content),
+                    semantic_score=self._calculate_semantic_score(question, chunk.content)
+                )
+                context_matches.append(context_match)
+        
+        # Sort by combined score
+        context_matches.sort(key=lambda x: x.confidence + x.semantic_score, reverse=True)
+        
+        return context_matches[:top_k]
+    
+    def _tokenize_advanced(self, text: str) -> List[str]:
+        """Advanced tokenization with stemming and normalization"""
+        tokens = re.findall(r'\b\w{3,}\b', text.lower())
+        
+        # Simple stemming rules
+        stemmed_tokens = []
+        for token in tokens:
+            if token.endswith('ing'):
+                stemmed_tokens.append(token[:-3])
+            elif token.endswith('ed'):
+                stemmed_tokens.append(token[:-2])
+            elif token.endswith('s') and len(token) > 4:
+                stemmed_tokens.append(token[:-1])
+            else:
+                stemmed_tokens.append(token)
+        
+        return list(set(stemmed_tokens))  # Remove duplicates
+    
+    def _calculate_relevance_score(self, question_tokens: List[str], chunk: DocumentChunk) -> float:
+        """Calculate relevance score between question and chunk"""
+        chunk_text_lower = chunk.content.lower()
+        chunk_tokens = self._tokenize_advanced(chunk_text_lower)
+        
+        # Exact matches
+        exact_matches = sum(1 for token in question_tokens if token in chunk_tokens)
+        exact_score = exact_matches / max(len(question_tokens), 1)
+        
+        # Partial matches
+        partial_matches = 0
+        for q_token in question_tokens:
+            for c_token in chunk_tokens:
+                if len(q_token) > 4 and len(c_token) > 4:
+                    if q_token in c_token or c_token in q_token:
+                        partial_matches += 0.5
+        
+        partial_score = partial_matches / max(len(question_tokens), 1)
+        
+        # Position bonus (keywords appearing early get higher score)
+        position_bonus = 0
+        for token in question_tokens:
+            pos = chunk_text_lower.find(token)
+            if pos != -1:
+                position_bonus += max(0, (1000 - pos) / 1000) * 0.1
+        
+        # Length penalty for very short or very long chunks
+        length_penalty = 1.0
+        if len(chunk.content) < 50:
+            length_penalty = 0.5
+        elif len(chunk.content) > 2000:
+            length_penalty = 0.8
+        
+        total_score = (exact_score * 0.6 + partial_score * 0.3 + position_bonus * 0.1) * length_penalty
+        
+        return min(total_score, 1.0)
+    
+    def _find_keyword_matches(self, question_tokens: List[str], content: str) -> List[str]:
+        """Find specific keyword matches"""
+        content_lower = content.lower()
+        matches = []
+        
+        for token in question_tokens:
+            if token in content_lower:
+                matches.append(token)
+        
+        return matches
+    
+    def _calculate_semantic_score(self, question: str, content: str) -> float:
+        """Calculate semantic similarity score"""
+        # Simple semantic scoring based on concept overlap
+        question_concepts = self._extract_concepts(question)
+        content_concepts = self._extract_concepts(content)
+        
+        if not question_concepts or not content_concepts:
+            return 0.0
+        
+        overlap = len(set(question_concepts) & set(content_concepts))
+        total_concepts = len(set(question_concepts) | set(content_concepts))
+        
+        return overlap / max(total_concepts, 1)
+    
+    def _extract_concepts(self, text: str) -> List[str]:
+        """Extract conceptual terms from text"""
+        # Simple concept extraction based on important terms
+        concepts = []
+        
+        # Look for compound terms
+        compound_patterns = [
+            r'\b\w+\s+period\b',
+            r'\b\w+\s+expenses?\b',
+            r'\b\w+\s+coverage?\b',
+            r'\b\w+\s+treatment\b',
+            r'\b\w+\s+benefits?\b'
+        ]
+        
+        for pattern in compound_patterns:
+            matches = re.findall(pattern, text.lower())
+            concepts.extend(matches)
+        
+        # Add individual important terms
+        important_terms = re.findall(r'\b(?:policy|insurance|claim|premium|discount|hospital|treatment|surgery|period|months?|years?|days?|percent|coverage|benefit)\b', text.lower())
+        concepts.extend(important_terms)
+        
+        return list(set(concepts))
+
+class AdvancedLLMProcessor:
+    """Advanced LLM processing with multiple models and techniques"""
+    
+    def __init__(self):
+        # Updated with current active Groq models
+        self.primary_model = "llama-3.1-8b-instant"
+        self.fallback_models = ["llama3-8b-8192", "gemma2-9b-it", "llama3-groq-8b-8192-tool-use-preview"]
+        self.api_available = bool(GROQ_API_KEY and REQUESTS_AVAILABLE)
+        self.request_cache = {}
+        
+        if self.api_available:
+            logger.info("AdvancedLLMProcessor ready with Groq API")
+        else:
+            logger.warning("LLM API not available")
+    
+    async def generate_precise_answer(self, question: str, contexts: List[ContextMatch], document_metadata: Dict) -> str:
+        """Generate precise answer using advanced LLM techniques"""
+        if not self.api_available:
+            return self._generate_fallback_answer(question, contexts)
+        
+        # Try multiple approaches for best accuracy
+        approaches = [
+            self._detailed_analysis_approach,
+            self._comparative_analysis_approach,
+            self._structured_extraction_approach
+        ]
+        
+        best_answer = None
+        best_confidence = 0.0
+        
+        for approach in approaches:
+            try:
+                answer, confidence = await approach(question, contexts, document_metadata)
+                if confidence > best_confidence:
+                    best_answer = answer
+                    best_confidence = confidence
+            except Exception as e:
+                logger.warning(f"Approach failed: {str(e)}")
+                continue
+        
+        if best_answer and best_confidence > 0.3:
+            return self._post_process_answer(best_answer)
+        else:
+            return self._generate_fallback_answer(question, contexts)
+    
+    async def _detailed_analysis_approach(self, question: str, contexts: List[ContextMatch], metadata: Dict) -> Tuple[str, float]:
+        """Detailed analysis approach for complex questions"""
+        # Combine top contexts
+        combined_context = self._combine_contexts(contexts[:3])
+        
+        prompt = f"""You are an expert document analyst. Answer the question directly and concisely using ONLY the information from the document.
+
+DOCUMENT CONTEXT:
+{combined_context}
+
+QUESTION: {question}
+
+CRITICAL INSTRUCTIONS:
+- Give a direct answer in ONE complete sentence
+- Start immediately with the answer, no introductory phrases
+- Include specific numbers, periods, percentages exactly as written
+- No meta-commentary or document references
+- No markdown formatting or bold text
+- Be precise and factual
+
+ANSWER:"""
+        
+        try:
+            response = await self._call_groq_api(self.primary_model, prompt, max_tokens=300, temperature=0.0)
+            confidence = self._assess_answer_confidence(response, contexts)
+            return response, confidence
+        except Exception as e:
+            logger.error(f"Detailed analysis failed: {str(e)}")
+            # Try fallback model if primary fails
+            try:
+                response = await self._call_groq_api(self.fallback_models[0], prompt, max_tokens=250, temperature=0.0)
+                confidence = self._assess_answer_confidence(response, contexts)
+                return response, confidence
+            except Exception as e2:
+                logger.error(f"Fallback also failed: {str(e2)}")
+                return "", 0.0
+    
+    async def _comparative_analysis_approach(self, question: str, contexts: List[ContextMatch], metadata: Dict) -> Tuple[str, float]:
+        """Comparative analysis for verification"""
+        if len(contexts) < 2:
+            return "", 0.0
+        
+        context1 = contexts[0].text
+        context2 = contexts[1].text
+        
+        prompt = f"""Compare these document sections and provide a direct answer to the question.
+
+SECTION 1: {context1}
+SECTION 2: {context2}
+
+QUESTION: {question}
+
+Give a direct, factual answer in one sentence with specific details from the document:"""
+        
+        try:
+            response = await self._call_groq_api(self.fallback_models[1], prompt, max_tokens=250, temperature=0.0)
+            confidence = self._assess_answer_confidence(response, contexts)
+            return response, confidence
+        except Exception as e:
+            logger.error(f"Comparative analysis failed: {str(e)}")
+            # Try another fallback
+            try:
+                response = await self._call_groq_api(self.fallback_models[2], prompt, max_tokens=200, temperature=0.0)
+                confidence = self._assess_answer_confidence(response, contexts)
+                return response, confidence
+            except Exception as e2:
+                logger.error(f"All comparative approaches failed: {str(e2)}")
+                return "", 0.0
+    
+    async def _structured_extraction_approach(self, question: str, contexts: List[ContextMatch], metadata: Dict) -> Tuple[str, float]:
+        """Structured information extraction approach"""
+        best_context = contexts[0] if contexts else None
+        if not best_context:
+            return "", 0.0
+        
+        prompt = f"""Extract the answer to the question from this document section.
+
+DOCUMENT: {best_context.text}
+
+QUESTION: {question}
+
+Answer directly with specific details from the document:"""
+        
+        try:
+            response = await self._call_groq_api(self.fallback_models[0], prompt, max_tokens=200, temperature=0.1)
+            confidence = self._assess_answer_confidence(response, contexts)
+            return response, confidence
+        except Exception as e:
+            logger.error(f"Structured extraction failed: {str(e)}")
+            # Final fallback attempt
+            try:
+                response = await self._call_groq_api("gemma2-9b-it", prompt, max_tokens=150, temperature=0.0)
+                confidence = self._assess_answer_confidence(response, contexts)
+                return response, confidence
+            except Exception as e2:
+                logger.error(f"All extraction approaches failed: {str(e2)}")
+                return "", 0.0
+    
+    def _combine_contexts(self, contexts: List[ContextMatch]) -> str:
+        """Combine multiple contexts intelligently"""
+        if not contexts:
+            return ""
+        
+        combined_text = ""
+        for i, context in enumerate(contexts):
+            combined_text += f"[SECTION {i+1}]\n{context.text}\n\n"
+        
+        return combined_text.strip()
+    
+    async def _call_groq_api(self, model: str, prompt: str, max_tokens: int = 200, temperature: float = 0.0) -> str:
+        """Make API call to Groq with error handling and retries"""
+        if not self.api_available:
+            raise ValueError("Groq API not available")
+        
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
         }
         
-        # Find relevant keywords
-        relevant_keywords = set()
-        for pattern_name, keywords in keyword_patterns.items():
-            if any(keyword in question_lower for keyword in keywords):
-                relevant_keywords.update(keywords)
+        data = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": 0.95,
+            "stream": False
+        }
         
-        # Add question-specific keywords
-        question_words = re.findall(r'\b\w+\b', question_lower)
-        relevant_keywords.update([word for word in question_words if len(word) > 3])
-        
-        # Remove stop words
-        stop_words = {'what', 'when', 'where', 'does', 'this', 'that', 'with', 'from', 'they', 'have', 'been'}
-        relevant_keywords = relevant_keywords - stop_words
-        
-        # Score chunks
-        scored_chunks = []
-        
-        for chunk in self.document_chunks:
-            chunk_text = chunk['text'].lower()
-            score = 0
-            
-            # Keyword matching score
-            keyword_matches = sum(1 for keyword in relevant_keywords if keyword in chunk_text)
-            score += keyword_matches * 2
-            
-            # Phrase matching bonus
-            question_phrases = self.extract_phrases(question_lower)
-            for phrase in question_phrases:
-                if phrase in chunk_text:
-                    score += 5
-            
-            # Number presence bonus (important for policy details)
-            if re.search(r'\d+', chunk['text']):
-                score += 1
-            
-            # Length bonus for substantial chunks
-            if len(chunk['text']) > 200:
-                score += 1
-            
-            if score > 0:
-                scored_chunks.append((score, chunk))
-        
-        # Sort by score and return top chunks
-        scored_chunks.sort(key=lambda x: x[0], reverse=True)
-        top_chunks = [chunk for score, chunk in scored_chunks[:top_k]]
-        
-        logger.debug(f"Found {len(top_chunks)} relevant chunks for question: {question[:50]}...")
-        return top_chunks
-    
-    def extract_phrases(self, text: str) -> List[str]:
-        """Extract important phrases from text"""
-        phrases = []
-        words = text.split()
-        
-        # Extract 2-word and 3-word phrases
-        for i in range(len(words) - 1):
-            if len(words[i]) > 3 and len(words[i+1]) > 3:
-                phrase = f"{words[i]} {words[i+1]}"
-                phrases.append(phrase)
-        
-        for i in range(len(words) - 2):
-            if all(len(word) > 3 for word in words[i:i+3]):
-                phrase = f"{words[i]} {words[i+1]} {words[i+2]}"
-                phrases.append(phrase)
-        
-        return phrases
-    
-    async def generate_competition_answer(self, question: str) -> str:
-        """Generate highly accurate answer optimized for competition scoring"""
-        
-        # Find relevant context
-        relevant_chunks = self.find_relevant_chunks(question, top_k=5)
-        
-        if not relevant_chunks:
-            return "Information about this topic is not available in the provided document."
-        
-        # Combine relevant chunks for context
-        context_parts = []
-        for chunk in relevant_chunks:
-            context_parts.append(chunk['text'])
-        
-        context = '\n\n'.join(context_parts)
-        
-        # Try Groq API with optimized prompt for accuracy
-        if self.groq_client:
+        # Try with retries
+        for attempt in range(3):
             try:
-                return await self.groq_generation_optimized(question, context)
-            except Exception as e:
-                logger.warning(f"Groq generation failed: {e}")
+                response = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers=headers,
+                    json=data,
+                    timeout=45
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"].strip()
+                    return self._clean_llm_response(content)
+                elif response.status_code == 429:
+                    # Rate limit, wait and retry
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    logger.error(f"Groq API error {response.status_code}: {response.text}")
+                    if attempt == 2:  # Last attempt
+                        raise ValueError(f"API call failed: {response.status_code}")
+                    
+            except requests.RequestException as e:
+                logger.error(f"Request failed (attempt {attempt + 1}): {str(e)}")
+                if attempt == 2:
+                    raise ValueError(f"Request failed: {str(e)}")
+                await asyncio.sleep(1)
         
-        # Fallback to advanced rule-based extraction
-        return self.advanced_rule_based_extraction(question, context)
+        raise ValueError("All API attempts failed")
     
-    async def groq_generation_optimized(self, question: str, context: str) -> str:
-        """Optimized Groq generation for maximum competition accuracy"""
+    def _clean_llm_response(self, response: str) -> str:
+        """Clean and normalize LLM response - ENHANCED FOR COMPETITION FORMAT"""
+        if not response:
+            return ""
         
-        system_prompt = """You are an expert document analyst for a high-stakes competition. Your accuracy is critical for scoring and leaderboard position.
-
-CRITICAL REQUIREMENTS:
-1. Answer ONLY from the provided context - no external knowledge
-2. Include ALL specific details: exact numbers, periods, percentages, conditions
-3. Use EXACT terminology and phrases from the document
-4. Be comprehensive and precise - include all relevant conditions
-5. If information is not in context, clearly state "Information not available in the document"
-6. Maintain professional, clear language
-7. Include specific details like timeframes, amounts, restrictions, and conditions
-
-ACCURACY IS PARAMOUNT - Each detail matters for competition scoring."""
-
-        user_prompt = f"""Document Context:
-{context}
-
-Question: {question}
-
-Provide a detailed, accurate answer based EXCLUSIVELY on the context above. Include all specific details, numbers, conditions, and exact terminology from the document."""
-
-        try:
-            response = self.groq_client.chat.completions.create(
-                model="gemma2-9b-it",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=600,
-                temperature=0.0,  # Maximum consistency
-                top_p=0.1        # Maximum focus
-            )
-            
-            answer = response.choices[0].message.content.strip()
-            
-            # Post-process for accuracy
-            answer = self.post_process_answer(answer, question)
-            
-            logger.info(f"Groq generated optimized answer: {len(answer)} chars")
-            return answer
-            
-        except Exception as e:
-            logger.error(f"Groq API call failed: {e}")
-            raise
+        # Remove ALL meta-commentary patterns
+        meta_patterns = [
+            r'^(Answer:|Response:|Based on|According to|The answer is|In the provided document|From the document|The document states|As stated in|Looking at|Analyzing|The specific information|Extract and provide|Therefore|Hence|Thus)',
+            r'^(the provided document section, the specific information that answers the question is:?\s*)',
+            r'^(\*\*.*?\*\*\s*)',  # Remove markdown bold
+            r'^(Section \d+.*?:?\s*)',  # Remove section references
+            r'^(Here\'s the relevant excerpt:?\s*)',
+            r'^(The answer is found in.*?:?\s*)',
+            r'^(Heres the relevant excerpt:?\s*)',
+        ]
+        
+        # Apply all patterns
+        for pattern in meta_patterns:
+            response = re.sub(pattern, '', response, flags=re.IGNORECASE | re.MULTILINE)
+        
+        # Remove asterisks and markdown formatting
+        response = re.sub(r'\*\*(.*?)\*\*', r'\1', response)
+        response = re.sub(r'\*(.*?)\*', r'\1', response)
+        
+        # Remove bullet points and list formatting
+        response = re.sub(r'^\s*[\*\-\•]\s*', '', response, flags=re.MULTILINE)
+        
+        # Clean up excessive spacing
+        response = re.sub(r'\s+', ' ', response)
+        response = response.strip()
+        
+        # Extract the main answer from complex responses
+        if 'therefore' in response.lower():
+            parts = response.split('therefore')
+            if len(parts) > 1:
+                response = parts[-1].strip()
+        
+        # If response starts with common prefixes, extract the actual answer
+        if response.lower().startswith(('yes,', 'no,', 'the policy', 'this policy')):
+            # Good start, keep as is
+            pass
+        else:
+            # Look for the actual answer after colons or other separators
+            separators = [':', '**', 'Therefore', 'Hence', 'Thus']
+            for sep in separators:
+                if sep in response:
+                    parts = response.split(sep)
+                    if len(parts) > 1 and len(parts[-1].strip()) > 20:
+                        response = parts[-1].strip()
+                        break
+        
+        # Ensure proper sentence structure
+        if response and not response.endswith(('.', '!', '?')):
+            response += '.'
+        
+        # Final cleaning - remove quotes that interfere with JSON
+        response = response.replace('"', '').replace("'", "")
+        
+        # Ensure no line breaks in final response
+        response = response.replace('\n', ' ').replace('\r', ' ')
+        response = re.sub(r'\s+', ' ', response).strip()
+        
+        return response
     
-    def post_process_answer(self, answer: str, question: str) -> str:
-        """Post-process answer to ensure maximum accuracy"""
+    def _assess_answer_confidence(self, answer: str, contexts: List[ContextMatch]) -> float:
+        """Assess confidence level of the generated answer"""
+        if not answer or len(answer) < 10:
+            return 0.0
+        
+        confidence_factors = []
+        
+        # Length factor (moderate length preferred)
+        length_score = min(len(answer) / 100, 1.0) if len(answer) < 200 else 0.8
+        confidence_factors.append(length_score)
+        
+        # Specificity factor (contains numbers, specific terms)
+        specificity_score = 0.0
+        if re.search(r'\d+', answer):
+            specificity_score += 0.3
+        if re.search(r'\d+%', answer):
+            specificity_score += 0.2
+        if any(term in answer.lower() for term in ['months', 'years', 'days', 'period']):
+            specificity_score += 0.2
+        if any(term in answer.lower() for term in ['policy', 'coverage', 'benefit']):
+            specificity_score += 0.2
+        confidence_factors.append(min(specificity_score, 1.0))
+        
+        # Context relevance factor
+        if contexts:
+            best_context = contexts[0]
+            context_words = set(best_context.text.lower().split())
+            answer_words = set(answer.lower().split())
+            overlap = len(context_words & answer_words)
+            relevance_score = overlap / max(len(answer_words), 1)
+            confidence_factors.append(min(relevance_score, 1.0))
+        else:
+            confidence_factors.append(0.3)
+        
+        # Coherence factor (no contradictory statements)
+        coherence_score = 1.0
+        if 'not available' in answer.lower() and len(answer) > 50:
+            coherence_score = 0.4  # Contradictory - long answer claiming no info
+        confidence_factors.append(coherence_score)
+        
+        # Calculate weighted average
+        weights = [0.2, 0.3, 0.3, 0.2]
+        final_confidence = sum(factor * weight for factor, weight in zip(confidence_factors, weights))
+        
+        return min(final_confidence, 1.0)
+    
+    def _generate_fallback_answer(self, question: str, contexts: List[ContextMatch]) -> str:
+        """Generate fallback answer when LLM is not available"""
+        if not contexts:
+            return "The requested information is not available in the provided document."
+        
+        # Use the best context to generate a response
+        best_context = contexts[0]
+        context_text = best_context.text
+        
+        # Simple extraction based on question type
+        question_lower = question.lower()
+        
+        # Look for sentences that might contain the answer
+        sentences = re.split(r'[.!?]+', context_text)
+        relevant_sentences = []
+        
+        # Score sentences based on keyword overlap
+        question_words = set(re.findall(r'\b\w{3,}\b', question_lower))
+        
+        for sentence in sentences:
+            sentence_clean = sentence.strip()
+            if len(sentence_clean) < 20:
+                continue
+            
+            sentence_words = set(re.findall(r'\b\w{3,}\b', sentence_clean.lower()))
+            overlap = len(question_words & sentence_words)
+            
+            if overlap > 1:
+                relevant_sentences.append((overlap, sentence_clean))
+        
+        if relevant_sentences:
+            # Sort by relevance and return the best sentence
+            relevant_sentences.sort(key=lambda x: x[0], reverse=True)
+            best_sentence = relevant_sentences[0][1]
+            
+            # Clean and format the sentence
+            if not best_sentence.endswith('.'):
+                best_sentence += '.'
+            
+            return best_sentence
+        
+        # If no good sentence found, return a generic response
+        return "The specific information requested is not clearly specified in the available document content."
+    
+    def _post_process_answer(self, answer: str) -> str:
+        """Post-process answer for final quality - ENHANCED FOR COMPETITION"""
         if not answer:
-            return "Information about this topic is not available in the provided document."
-        
-        # Remove any potential hallucinations or external references
-        answer = re.sub(r'As per my knowledge.*?', '', answer)
-        answer = re.sub(r'Based on general information.*?', '', answer)
-        answer = re.sub(r'According to common practices.*?', '', answer)
+            return "Information not available."
         
         # Ensure proper formatting
         answer = answer.strip()
         
-        # Ensure it ends with proper punctuation
+        # Remove ALL meta-commentary and prefixes
+        prefixes_to_remove = [
+            'the provided document section, the specific information that answers the question is:',
+            'based on the provided context',
+            'according to the document',
+            'the document states that',
+            'from the document',
+            'in the provided document',
+            'the answer is found in',
+            'looking at the document',
+            'analyzing the document',
+            'section',
+            'therefore,',
+            'hence,',
+            'thus,',
+            'the specific information',
+            'extract and provide',
+            'heres the relevant excerpt',
+            'here is the relevant excerpt'
+        ]
+        
+        answer_lower = answer.lower()
+        for prefix in prefixes_to_remove:
+            if answer_lower.startswith(prefix):
+                answer = answer[len(prefix):].strip()
+                if answer.startswith(':'):
+                    answer = answer[1:].strip()
+                break
+        
+        # Remove markdown formatting
+        answer = re.sub(r'\*\*(.*?)\*\*', r'\1', answer)
+        answer = re.sub(r'\*(.*?)\*', r'\1', answer)
+        
+        # Remove section references at the start
+        answer = re.sub(r'^Section \d+[^.]*?[:.]\s*', '', answer, flags=re.IGNORECASE)
+        
+        # Extract main content if there are multiple sentences
+        sentences = re.split(r'[.!?]+', answer)
+        if len(sentences) > 1:
+            # Find the sentence with the most meaningful content
+            best_sentence = ""
+            max_score = 0
+            
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if len(sentence) < 20:
+                    continue
+                
+                # Score based on content quality
+                score = 0
+                if any(word in sentence.lower() for word in ['policy', 'coverage', 'period', 'months', 'years', 'days', '%']):
+                    score += 2
+                if any(char.isdigit() for char in sentence):
+                    score += 1
+                if len(sentence) > 30:
+                    score += 1
+                
+                if score > max_score and not sentence.lower().startswith(('therefore', 'hence', 'thus', 'the answer', 'section')):
+                    max_score = score
+                    best_sentence = sentence
+            
+            if best_sentence:
+                answer = best_sentence
+        
+        # Ensure proper ending
         if answer and not answer.endswith(('.', '!', '?')):
             answer += '.'
         
+        # Final cleaning - remove any remaining artifacts
+        answer = re.sub(r'\s+', ' ', answer).strip()
+        
+        # Ensure no quotes that break JSON
+        answer = answer.replace('"', '').replace("'", "")
+        
+        # Make sure it's a complete, clean sentence
+        if len(answer) < 10:
+            return "Information not available."
+        
         return answer
+
+class CompetitionOrchestrator:
+    """Main orchestrator for competition processing"""
     
-    def advanced_rule_based_extraction(self, question: str, context: str) -> str:
-        """Advanced rule-based extraction for fallback accuracy"""
-        if not context:
-            return "Information not available in the provided context."
+    def __init__(self):
+        self.document_processor = AdvancedDocumentProcessor()
+        self.context_matcher = IntelligentContextMatcher()
+        self.llm_processor = AdvancedLLMProcessor()
+        self.processing_stats = {}
+        logger.info("CompetitionOrchestrator initialized with full pipeline")
+    
+    async def process_competition_request(self, documents: str, questions: List[str], request_id: str) -> Tuple[List[str], ProcessingStats]:
+        """Process complete competition request with maximum accuracy"""
+        start_time = time.time()
         
-        sentences = re.split(r'[.!?]+', context)
-        question_words = set(re.findall(r'\b\w+\b', question.lower()))
-        
-        # Remove stop words
-        stop_words = {'what', 'is', 'are', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
-        question_words = question_words - stop_words
-        
-        scored_sentences = []
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if len(sentence) < 20:
-                continue
+        try:
+            # Step 1: Process document
+            logger.info(f"[{request_id}] Processing document...")
+            document_data = await self.document_processor.process_document(documents)
             
-            sentence_words = set(re.findall(r'\b\w+\b', sentence.lower()))
-            overlap = len(question_words & sentence_words)
+            # Step 2: Process each question
+            answers = []
+            total_confidence = 0.0
             
-            # Scoring factors
-            score = 0
-            score += overlap * 3  # Word overlap
-            score += 5 if re.search(r'\d+', sentence) else 0  # Numbers bonus
-            score += 2 if len(sentence) > 100 else 0  # Length bonus
-            score += 3 if any(word in sentence.lower() for word in question_words) else 0  # Direct match bonus
+            for i, question in enumerate(questions):
+                logger.info(f"[{request_id}] Processing question {i+1}/{len(questions)}")
+                
+                # Find relevant contexts
+                relevant_contexts = self.context_matcher.find_relevant_contexts(
+                    question, 
+                    document_data['chunks'], 
+                    top_k=5
+                )
+                
+                if not relevant_contexts:
+                    logger.warning(f"[{request_id}] No relevant context found for question {i+1}")
+                    answers.append("The requested information is not available in the provided document.")
+                    continue
+                
+                # Generate answer using LLM
+                answer = await self.llm_processor.generate_precise_answer(
+                    question, 
+                    relevant_contexts, 
+                    document_data['metadata']
+                )
+                
+                answers.append(answer)
+                
+                # Calculate confidence (simplified)
+                confidence = sum(ctx.confidence for ctx in relevant_contexts[:3]) / 3
+                total_confidence += confidence
+                
+                logger.info(f"[{request_id}] Q{i+1} processed with confidence: {confidence:.2f}")
             
-            if score >= 3:
-                scored_sentences.append((score, sentence))
-        
-        if scored_sentences:
-            scored_sentences.sort(key=lambda x: x[0], reverse=True)
+            # Calculate final statistics
+            processing_time = time.time() - start_time
+            avg_confidence = total_confidence / len(questions) if questions else 0.0
             
-            # Combine top sentences for comprehensive answer
-            top_sentences = [sent for score, sent in scored_sentences[:3] if score >= 5]
+            stats = ProcessingStats(
+                processing_time=processing_time,
+                document_length=document_data['metadata']['total_length'],
+                questions_processed=len(questions),
+                accuracy_score=avg_confidence * 100,
+                confidence_level="High" if avg_confidence > 0.7 else "Medium" if avg_confidence > 0.4 else "Low"
+            )
             
-            if top_sentences:
-                return '. '.join(top_sentences).strip() + '.'
-            else:
-                # Return best single sentence
-                return scored_sentences[0][1].strip() + '.'
-        
-        # Final fallback
-        for sentence in sentences:
-            if len(sentence.strip()) > 50:
-                return sentence.strip() + '.'
-        
-        return "Information about this topic is not available in the provided document."
+            logger.info(f"[{request_id}] Processing completed in {processing_time:.2f}s with {stats.confidence_level} confidence")
+            
+            return answers, stats
+            
+        except Exception as e:
+            logger.error(f"[{request_id}] Processing failed: {str(e)}")
+            # Return fallback answers
+            fallback_answers = ["Processing error occurred - please try again." for _ in questions]
+            error_stats = ProcessingStats(
+                processing_time=time.time() - start_time,
+                document_length=0,
+                questions_processed=len(questions),
+                accuracy_score=0.0,
+                confidence_level="Error"
+            )
+            return fallback_answers, error_stats
+    
+    async def cleanup(self):
+        """Cleanup resources"""
+        await self.document_processor.close()
 
-# Initialize processors
-doc_processor = AdvancedDocumentProcessor()
-answer_engine = CompetitionAnswerEngine()
+# Initialize the orchestrator
+competition_orchestrator = CompetitionOrchestrator()
 
-# FastAPI application
+# FastAPI Application Setup
 app = FastAPI(
-    title="HackRx 6.0 - Competition Server",
-    description="Advanced Document Q&A System optimized for maximum accuracy and competition scoring",
+    title="HackRx 6.0 - Ultra Dynamic Competition System",
+    description="Advanced Document Q&A System with Maximum Accuracy - No Templates, Pure Dynamic Processing",
     version="6.0.0"
 )
 
-# CORS middleware
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -802,299 +1168,277 @@ app.add_middleware(
 # Security
 security = HTTPBearer(auto_error=False)
 
-async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify API key for competition access"""
-    if credentials and credentials.credentials != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return credentials.credentials if credentials else None
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Verify API authentication token"""
+    if not credentials or credentials.credentials != API_KEY:
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid or missing authentication token"
+        )
+    return credentials.credentials
 
-# Competition Routes
+# API Endpoints
+
 @app.get("/")
 async def root():
-    """Root endpoint showing competition status"""
+    """Root endpoint with comprehensive system status"""
     return {
-        "message": "HackRx 6.0 - Competition Server Ready for Maximum Accuracy",
+        "message": "HackRx 6.0 - Ultra Dynamic Competition System",
         "status": "ready",
         "version": "6.0.0",
-        "optimization": "competition_accuracy",
-        "llm_model": "gemma2-9b-it",
+        "competition_ready": True,
+        "processing_type": "ultra_dynamic",
         "features": {
-            "advanced_pdf_processing": True,
+            "multi_format_support": ["PDF", "DOCX", "TXT", "HTML"],
+            "advanced_context_matching": True,
+            "multi_model_llm": True,
             "intelligent_chunking": True,
-            "groq_llm_integration": GROQ_AVAILABLE,
-            "dynamic_document_support": True,
-            "competition_optimized": True
+            "semantic_analysis": True,
+            "confidence_scoring": True
         },
+        "llm_available": competition_orchestrator.llm_processor.api_available,
+        "supported_formats": list(competition_orchestrator.document_processor.content_extractors.keys()),
         "endpoints": {
-            "/hackrx/run": "Main competition endpoint",
-            "/health": "Health check",
-            "/api/v1/status": "Detailed status"
-        },
-        "competition_ready": GROQ_AVAILABLE and bool(GROQ_API_KEY)
+            "/hackrx/run": "Main competition endpoint - Dynamic processing for any document",
+            "/health": "Health check with detailed system status",
+            "/system-info": "Detailed system capabilities"
+        }
     }
 
-@app.post("/hackrx/run")
-async def hackrx_competition_endpoint(
+@app.get("/health")
+async def health_check():
+    """Comprehensive health check"""
+    system_status = {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "competition_ready": True,
+        "components": {
+            "document_processor": PDF_AVAILABLE and AIOHTTP_AVAILABLE,
+            "context_matcher": True,
+            "llm_processor": competition_orchestrator.llm_processor.api_available,
+            "groq_api": bool(GROQ_API_KEY),
+            "requests_available": REQUESTS_AVAILABLE
+        },
+        "capabilities": {
+            "pdf_processing": PDF_AVAILABLE,
+            "docx_processing": DOCX_AVAILABLE,
+            "advanced_matching": True,
+            "multi_model_support": True,
+            "fallback_processing": True
+        },
+        "performance": {
+            "expected_response_time": "15-30 seconds",
+            "max_document_size": "50MB",
+            "max_questions_per_request": 50,
+            "accuracy_target": ">95%"
+        }
+    }
+    
+    # Determine overall health
+    critical_components = ["document_processor", "context_matcher"]
+    all_critical_healthy = all(system_status["components"][comp] for comp in critical_components)
+    
+    if not all_critical_healthy:
+        system_status["status"] = "degraded"
+        system_status["competition_ready"] = False
+    
+    return system_status
+
+@app.get("/system-info")
+async def system_info():
+    """Detailed system information and capabilities"""
+    return {
+        "system": "HackRx 6.0 Ultra Dynamic Competition System",
+        "architecture": {
+            "document_processing": "Multi-format advanced extraction",
+            "context_matching": "Intelligent semantic matching with confidence scoring",
+            "llm_processing": "Multi-model approach with fallback strategies",
+            "response_generation": "Dynamic analysis with post-processing"
+        },
+        "algorithms": {
+            "chunking": "Intelligent section-based chunking with metadata",
+            "relevance_scoring": "Multi-factor relevance calculation",
+            "semantic_matching": "Concept-based semantic analysis",
+            "confidence_assessment": "Multi-dimensional confidence scoring"
+        },
+        "performance_features": {
+            "caching": "Intelligent caching for repeated requests",
+            "parallel_processing": "Concurrent question processing",
+            "error_recovery": "Graceful degradation and fallback strategies",
+            "quality_assurance": "Multi-approach answer validation"
+        },
+        "supported_document_types": [
+            "Insurance policies", "Legal contracts", "HR documents", 
+            "Compliance documents", "Technical manuals", "Financial reports"
+        ],
+        "optimization": {
+            "accuracy_focus": "Maximum precision over speed",
+            "context_depth": "Deep contextual understanding",
+            "response_quality": "Comprehensive answer generation",
+            "error_handling": "Robust error recovery"
+        }
+    }
+
+@app.post("/hackrx/run", response_model=CompetitionResponse)
+async def competition_endpoint(
     request: Request,
-    api_key: str = Depends(verify_api_key)
+    token: str = Depends(verify_token)
 ):
     """
-    Main HackRx Competition Endpoint
-    Optimized for maximum accuracy and leaderboard scoring
+    Ultra Dynamic Competition Endpoint
+    
+    Processes any document format with any questions using advanced AI techniques.
+    No templates, no patterns - pure dynamic analysis for maximum competition accuracy.
     """
     start_time = time.time()
     request_id = str(uuid.uuid4())[:8]
     
-    try:
-        request_data = await request.json()
-        
-        # Handle simple data processing (original format)
-        if "data" in request_data:
-            logger.info(f"[{request_id}] Processing simple data format")
-            
-            data = request_data["data"]
-            numbers = [item for item in data if item.isdigit()]
-            alphabets = [item for item in data if item.isalpha()]
-            lowercase_alphabets = [item for item in alphabets if item.islower()]
-            highest_lowercase = [max(lowercase_alphabets)] if lowercase_alphabets else []
-            
-            return SimpleResponse(
-                is_success=True,
-                user_id="patel",
-                email="aryanpatel77462@gmail.com",
-                roll_number="1047",
-                numbers=numbers,
-                alphabets=alphabets,
-                highest_lowercase_alphabet=highest_lowercase
-            )
-        
-        # Handle document processing (competition format)
-        elif "documents" in request_data and "questions" in request_data:
-            logger.info(f"[{request_id}] 🏆 Processing HackRx Competition Request")
-            
-            documents = request_data.get("documents", "")
-            questions = request_data.get("questions", [])
-            
-            logger.info(f"[{request_id}] Document: {documents[:100]}...")
-            logger.info(f"[{request_id}] Questions: {len(questions)} total")
-            
-            try:
-                # Stage 1: Advanced Document Processing
-                logger.info(f"[{request_id}] 📄 Stage 1: Advanced Document Processing")
-                document_text = await doc_processor.process_document(documents)
-                
-                if not document_text or len(document_text.strip()) < 100:
-                    logger.error(f"[{request_id}] ❌ Document processing failed or insufficient content")
-                    return DocumentResponse(
-                        answers=["Unable to extract sufficient information from the document. Please verify the document URL and accessibility."] * len(questions)
-                    )
-                
-                logger.info(f"[{request_id}] ✅ Document processed: {len(document_text)} characters extracted")
-                
-                # Stage 2: Prepare Competition Answer Engine
-                logger.info(f"[{request_id}] 🤖 Stage 2: Preparing Competition Answer Engine")
-                answer_engine.prepare_document(document_text)
-                
-                # Stage 3: Generate Competition-Grade Answers
-                logger.info(f"[{request_id}] 🎯 Stage 3: Generating Competition-Grade Answers")
-                answers = []
-                
-                for i, question in enumerate(questions):
-                    q_start = time.time()
-                    logger.info(f"[{request_id}] 🤔 Processing Q{i+1}/{len(questions)}: {question[:80]}...")
-                    
-                    try:
-                        answer = await answer_engine.generate_competition_answer(question)
-                        answers.append(answer)
-                        
-                        q_time = time.time() - q_start
-                        logger.info(f"[{request_id}] ✅ Q{i+1} completed in {q_time:.2f}s - Answer: {len(answer)} chars")
-                        logger.debug(f"[{request_id}] Answer preview: {answer[:100]}...")
-                        
-                    except Exception as e:
-                        logger.error(f"[{request_id}] ❌ Failed to process Q{i+1}: {e}")
-                        answers.append("Unable to process this question due to a system error. Please try again.")
-                
-                # Competition Performance Metrics
-                total_time = time.time() - start_time
-                avg_time = total_time / len(questions) if questions else 0
-                
-                logger.info(f"[{request_id}] 🏆 HACKRX COMPETITION COMPLETED:")
-                logger.info(f"[{request_id}]    ⏱️  Total Time: {total_time:.2f}s")
-                logger.info(f"[{request_id}]    📊 Avg Time/Question: {avg_time:.2f}s")
-                logger.info(f"[{request_id}]    ✅ Success Rate: 100%")
-                logger.info(f"[{request_id}]    🎯 Accuracy Mode: MAXIMUM")
-                
-                # Return competition response format
-                return DocumentResponse(answers=answers)
-                
-            except Exception as e:
-                logger.error(f"[{request_id}] ❌ Document processing pipeline error: {e}")
-                return DocumentResponse(
-                    answers=[f"Document processing error: {str(e)}. Please check the document URL and try again."] * len(questions)
-                )
-        
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid request format. Expected 'data' array or 'documents' + 'questions' fields."
-            )
-            
-    except Exception as e:
-        logger.error(f"[{request_id}] ❌ Critical competition endpoint error: {e}")
-        
-        # Emergency fallback
-        try:
-            if 'request_data' in locals() and "questions" in request_data:
-                question_count = len(request_data.get("questions", []))
-                return DocumentResponse(
-                    answers=[f"Critical system error: {str(e)}. Please try again."] * question_count
-                )
-        except:
-            pass
-        
-        raise HTTPException(status_code=500, detail=f"Critical system error: {str(e)}")
-
-@app.get("/health")
-async def health_check():
-    """Competition health check"""
-    return {
-        "status": "healthy",
-        "message": "HackRx Competition Server Running",
-        "version": "6.0.0",
-        "competition_ready": GROQ_AVAILABLE and bool(GROQ_API_KEY),
-        "services": {
-            "document_processor": True,
-            "answer_engine": True,
-            "groq_llm": GROQ_AVAILABLE,
-            "groq_api_key": "configured" if GROQ_API_KEY else "missing"
-        },
-        "dependencies": {
-            "aiohttp": AIOHTTP_AVAILABLE,
-            "pypdf2": PYPDF2_AVAILABLE,
-            "numpy": NUMPY_AVAILABLE,
-            "requests": REQUESTS_AVAILABLE
-        },
-        "optimization": "maximum_accuracy",
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-@app.get("/api/v1/status")
-async def detailed_status():
-    """Detailed status for competition monitoring"""
-    return {
-        "competition_server": {
-            "name": "HackRx 6.0 Competition Server",
-            "version": "6.0.0",
-            "status": "operational",
-            "optimization_level": "maximum_accuracy"
-        },
-        "llm_configuration": {
-            "primary_model": "gemma2-9b-it",
-            "provider": "Groq",
-            "available": GROQ_AVAILABLE,
-            "api_key_configured": bool(GROQ_API_KEY),
-            "temperature": 0.0,
-            "max_tokens": 600
-        },
-        "document_processing": {
-            "formats_supported": ["PDF", "DOCX", "TXT"],
-            "advanced_extraction": True,
-            "intelligent_chunking": True,
-            "cache_enabled": True
-        },
-        "competition_features": {
-            "accuracy_optimization": True,
-            "dynamic_pdf_support": True,
-            "context_preservation": True,
-            "intelligent_scoring": True
-        },
-        "performance_metrics": {
-            "target_response_time": "< 30 seconds",
-            "accuracy_target": "> 95%",
-            "supported_concurrent_requests": 10
-        }
-    }
-
-@app.post("/test-processing")
-async def test_document_processing():
-    """Test endpoint for document processing validation"""
-    test_url = "https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D"
+    logger.info(f"🏆 ULTRA DYNAMIC Competition Request {request_id} initiated")
     
     try:
-        start_time = time.time()
-        text = await doc_processor.process_document(test_url)
-        processing_time = time.time() - start_time
+        # Parse and validate request
+        request_body = await request.body()
+        if not request_body:
+            raise HTTPException(status_code=400, detail="Empty request body")
         
-        if text and len(text) > 100:
-            # Test answer generation
-            answer_engine.prepare_document(text)
-            test_answer = await answer_engine.generate_competition_answer(
-                "What is the grace period for premium payment?"
+        try:
+            request_data = json.loads(request_body.decode('utf-8'))
+            documents = request_data.get('documents')
+            questions = request_data.get('questions')
+            
+            if not documents:
+                raise HTTPException(status_code=400, detail="Missing 'documents' field")
+            if not questions or not isinstance(questions, list):
+                raise HTTPException(status_code=400, detail="Missing or invalid 'questions' field")
+            
+            logger.info(f"[{request_id}] Request validated: {len(questions)} questions")
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"[{request_id}] JSON parsing error: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+        
+        # Process with ultra dynamic system
+        try:
+            answers, processing_stats = await competition_orchestrator.process_competition_request(
+                documents, questions, request_id
             )
             
-            return {
-                "status": "✅ SUCCESS",
-                "processing_time": f"{processing_time:.2f}s",
-                "document_stats": {
-                    "length": len(text),
-                    "word_count": len(text.split()),
-                    "preview": text[:300] + "..."
-                },
-                "answer_test": {
-                    "question": "What is the grace period for premium payment?",
-                    "answer": test_answer,
-                    "answer_length": len(test_answer)
-                },
-                "competition_readiness": "READY"
-            }
-        else:
-            return {
-                "status": "❌ FAILED",
-                "error": "Insufficient text extracted",
-                "document_length": len(text) if text else 0,
-                "competition_readiness": "NOT READY"
-            }
+            if len(answers) != len(questions):
+                logger.error(f"[{request_id}] Answer count mismatch: {len(answers)} vs {len(questions)}")
+                raise HTTPException(status_code=500, detail="Failed to generate all answers")
             
+            # Validate answer quality
+            for i, answer in enumerate(answers):
+                if not answer or len(answer.strip()) < 5:
+                    logger.warning(f"[{request_id}] Answer {i+1} may be too short: '{answer}'")
+                    answers[i] = "The requested information requires more context for accurate response."
+            
+            # Log success metrics
+            total_time = time.time() - start_time
+            logger.info(f"[{request_id}] ✅ SUCCESS - Processed in {total_time:.2f}s")
+            logger.info(f"[{request_id}] 📊 Stats: {processing_stats.accuracy_score:.1f}% accuracy, {processing_stats.confidence_level} confidence")
+            
+            # Return competition response
+            return CompetitionResponse(answers=answers)
+            
+        except ValueError as ve:
+            logger.error(f"[{request_id}] Processing error: {str(ve)}")
+            raise HTTPException(status_code=400, detail=f"Document processing failed: {str(ve)}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        total_time = time.time() - start_time
+        logger.error(f"[{request_id}] ❌ FAILED after {total_time:.2f}s: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal processing error: {str(e)}"
+        )
+
+@app.post("/test-processing")
+async def test_processing_endpoint():
+    """Test endpoint for system validation"""
+    test_request_id = "test_" + str(uuid.uuid4())[:6]
+    
+    try:
+        # Test document URL
+        test_url = "https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D"
+        test_questions = [
+            "What type of document is this?",
+            "What are the main topics covered?"
+        ]
+        
+        answers, stats = await competition_orchestrator.process_competition_request(
+            test_url, test_questions, test_request_id
+        )
+        
+        return {
+            "status": "✅ SUCCESS",
+            "test_id": test_request_id,
+            "answers": answers,
+            "statistics": {
+                "processing_time": f"{stats.processing_time:.2f}s",
+                "document_length": stats.document_length,
+                "accuracy_score": f"{stats.accuracy_score:.1f}%",
+                "confidence_level": stats.confidence_level
+            },
+            "system_ready": True
+        }
+        
     except Exception as e:
         return {
-            "status": "❌ ERROR",
+            "status": "❌ FAILED",
+            "test_id": test_request_id,
             "error": str(e),
-            "competition_readiness": "NOT READY"
+            "system_ready": False
         }
 
-@app.get("/competition-metrics")
-async def competition_metrics():
-    """Competition-specific metrics and configuration"""
-    return {
-        "leaderboard_optimization": {
-            "accuracy_focus": "maximum",
-            "response_quality": "comprehensive",
-            "detail_preservation": "exact_terminology",
-            "context_utilization": "intelligent_chunking"
-        },
-        "scoring_factors": {
-            "answer_completeness": "all_specific_details",
-            "terminology_accuracy": "exact_document_phrases",
-            "numerical_precision": "exact_numbers_periods",
-            "condition_coverage": "comprehensive_conditions"
-        },
-        "competition_advantages": {
-            "advanced_pdf_extraction": "multi_strategy_extraction",
-            "intelligent_text_cleaning": "context_preservation",
-            "groq_optimization": "gemma2_9b_it_model",
-            "dynamic_document_support": "any_pdf_without_code_changes",
-            "accuracy_post_processing": "hallucination_prevention"
-        }
-    }
+# Advanced Error Handlers
 
-# Error handlers
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail}")
-    return {"error": f"HTTP {exc.status_code}", "detail": exc.detail}
+    """Enhanced HTTP exception handler"""
+    logger.error(f"HTTP {exc.status_code}: {exc.detail}")
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": f"HTTP {exc.status_code}",
+            "detail": exc.detail,
+            "timestamp": datetime.now().isoformat(),
+            "path": str(request.url.path)
+        }
+    )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {str(exc)}")
-    return {"error": "Internal server error", "detail": str(exc)}
+    """Global exception handler with detailed logging"""
+    error_id = str(uuid.uuid4())[:8]
+    logger.error(f"Global error {error_id}: {str(exc)}", exc_info=True)
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "error_id": error_id,
+            "detail": "An unexpected error occurred during processing",
+            "timestamp": datetime.now().isoformat()
+        }
+    )
+
+# Application Lifecycle Events
+
+@app.on_event("startup")
+async def startup_event():
+    """Application startup initialization"""
+    logger.info("🚀 Ultra Dynamic Competition System starting up...")
+    logger.info("📊 System capabilities initialized")
+    logger.info("🔧 All processors ready")
+    logger.info("✅ Competition system ready for maximum accuracy processing!")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Application shutdown cleanup"""
+    logger.info("🔄 Shutting down Ultra Dynamic Competition System...")
+    await competition_orchestrator.cleanup()
+    logger.info("✅ Cleanup completed successfully")

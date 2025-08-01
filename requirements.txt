@@ -1,32 +1,16 @@
-# requirements.txt - Render Compatible (Python 3.11)
-# Core FastAPI
+# requirements.txt - Final Optimized for Maximum Accuracy
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
-
-# Web and async
 aiohttp==3.9.5
 requests==2.31.0
 python-multipart==0.0.6
-
-# Document processing
 PyPDF2==3.0.1
 python-docx==1.1.0
-
-# Scientific computing (compatible versions)
-numpy
-
-# LLM
-# groq==0.4.1
-groq==0.9.0  
-
-# Utilities
+numpy==1.24.4
+groq==0.9.0
 python-dotenv==1.0.0
-
-# Server
 gunicorn==21.2.0
-
-# Build tools (fix for Python 3.13 issue)
 setuptools>=65.0.0
 wheel>=0.37.0
 packaging>=21.0

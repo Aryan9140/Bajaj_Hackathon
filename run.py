@@ -1,8 +1,12 @@
-# run.py - Simple Server Startup for HackRx 6.0
+# run.py - Simple Server Startup for HackRx 6.0 - FIXED
 import os
 import sys
 import logging
 import uvicorn
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,15 +30,30 @@ def main():
     logger.info(f"   Port: {port}")
     logger.info(f"   Environment: {'Production' if port != 8000 else 'Development'}")
     
-    # Check Groq API key
+    # Check Groq API key - FIXED
     groq_key = os.getenv("GROQ_API_KEY")
+    print(f"🔍 DEBUG - Groq Key Value: {groq_key}")  # Debug print - FIXED
+    
     if groq_key:
-        logger.info(f"🔑 Groq API Key: Configured")
-        logger.info(f"🤖 LLM Model: gemma2-9b-it")
+        logger.info(f"🔑 Groq API Key: Configured ({groq_key[:10]}...)")
+        logger.info(f"🤖 LLM Model: llama-3.1-70b-versatile")
         logger.info(f"🎯 Optimization: Maximum Accuracy")
     else:
         logger.warning(f"⚠️ Groq API Key: NOT SET")
         logger.warning(f"   Please set GROQ_API_KEY environment variable")
+        
+        # Additional debugging
+        print("🔍 DEBUG - All environment variables containing 'GROQ':")
+        for key, value in os.environ.items():
+            if 'GROQ' in key.upper():
+                print(f"   {key} = {value}")
+        
+        print("🔍 DEBUG - Checking common env var names:")
+        alternatives = ["GROQ_API_KEY", "groq_api_key", "GROQ_KEY", "groq_key"]
+        for alt in alternatives:
+            val = os.getenv(alt)
+            if val:
+                print(f"   Found: {alt} = {val}")
     
     logger.info(f"📊 Competition Mode: ACTIVE")
     logger.info(f"🏆 Ready for leaderboard scoring!")
