@@ -1,7 +1,7 @@
 """
 run.py - Server startup and API endpoints
 Enhanced for HackRx 6.0 Competition with Groq LLM primary
-Imports advanced features from app/main.py
+Fixed imports for app/main.py structure
 """
 
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -11,26 +11,67 @@ from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
 import os
+import sys
 import logging
 import time
 
-# Import competition features from app/main.py
-try:
-    from app.main import (
-        DocumentProcessor,
-        CompetitionAnswerEngine,
-        doc_processor,
-        answer_engine
-    )
-    COMPETITION_FEATURES_AVAILABLE = True
-    logging.info("Competition features imported from app/main.py")
-except ImportError as e:
-    COMPETITION_FEATURES_AVAILABLE = False
-    logging.warning(f"Competition features not available: {e}")
-
-# Configure logging
+# Configure logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Fix import path for app/main.py structure
+COMPETITION_FEATURES_AVAILABLE = False
+doc_processor = None
+answer_engine = None
+
+try:
+    # Add current directory and app directory to Python path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    app_dir = os.path.join(current_dir, 'app')
+    
+    if app_dir not in sys.path:
+        sys.path.insert(0, app_dir)
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
+    # Try multiple import strategies
+    try:
+        # Strategy 1: Import from app.main
+        from app.main import (
+            DocumentProcessor,
+            CompetitionAnswerEngine,
+            doc_processor,
+            answer_engine
+        )
+        COMPETITION_FEATURES_AVAILABLE = True
+        logger.info("✅ Competition features imported from app.main")
+    except ImportError:
+        try:
+            # Strategy 2: Import from main (after adding app to path)
+            import main
+            DocumentProcessor = main.DocumentProcessor
+            CompetitionAnswerEngine = main.CompetitionAnswerEngine
+            doc_processor = main.doc_processor
+            answer_engine = main.answer_engine
+            COMPETITION_FEATURES_AVAILABLE = True
+            logger.info("✅ Competition features imported from main")
+        except ImportError:
+            try:
+                # Strategy 3: Manual import and instantiation
+                from app import main
+                DocumentProcessor = main.DocumentProcessor
+                CompetitionAnswerEngine = main.CompetitionAnswerEngine
+                doc_processor = main.DocumentProcessor()
+                answer_engine = main.CompetitionAnswerEngine()
+                COMPETITION_FEATURES_AVAILABLE = True
+                logger.info("✅ Competition features imported and instantiated manually")
+            except ImportError as e:
+                logger.error(f"❌ Failed to import competition features: {e}")
+                COMPETITION_FEATURES_AVAILABLE = False
+
+except Exception as e:
+    logger.error(f"❌ Critical import error: {e}")
+    COMPETITION_FEATURES_AVAILABLE = False
 
 app = FastAPI(
     title="HackRx 6.0 - Competition Server",
@@ -78,11 +119,13 @@ async def root():
         "status": "ready", 
         "version": "6.0.0",
         "competition_features": "available" if COMPETITION_FEATURES_AVAILABLE else "not available",
+        "import_status": "✅ Imported successfully" if COMPETITION_FEATURES_AVAILABLE else "❌ Import failed",
         "primary_llm": "Groq (Free tier optimized)",
         "endpoints": {
             "/hackrx/run": "Main competition endpoint (handles both formats)",
             "/health": "Health check",
-            "/test-processing": "Test document processing"
+            "/test-processing": "Test document processing",
+            "/competition-status": "Competition readiness check"
         },
         "features": [
             "Advanced PDF extraction",
@@ -139,77 +182,92 @@ async def competition_endpoint(
             logger.info("Processing document format for competition")
             
             if not COMPETITION_FEATURES_AVAILABLE:
-                logger.error("Competition features not available")
+                logger.error("❌ Competition features not available")
                 questions = request_data.get("questions", [])
                 return {
-                    "answers": ["Competition features not available. Please check app/main.py configuration."] * len(questions)
+                    "answers": ["Competition features import failed. Check app/main.py file exists and is properly configured."] * len(questions)
+                }
+            
+            if not doc_processor or not answer_engine:
+                logger.error("❌ Processors not initialized")
+                questions = request_data.get("questions", [])
+                return {
+                    "answers": ["Document processors not initialized. Check app/main.py configuration."] * len(questions)
                 }
             
             documents = request_data.get("documents", "")
             questions = request_data.get("questions", [])
             
-            logger.info(f"Competition request: {len(questions)} questions")
-            logger.info(f"Document URL: {documents[:100]}...")
+            logger.info(f"🏆 Competition request: {len(questions)} questions")
+            logger.info(f"📄 Document URL: {documents[:100]}...")
             
-            # Use advanced document processor from app/main.py
-            logger.info("Stage 1: Document Processing")
-            document_text = await doc_processor.process_document(documents)
-            
-            if not document_text or len(document_text.strip()) < 100:
-                logger.error("Document processing failed or insufficient content")
-                return {
-                    "answers": ["Unable to extract sufficient information from the provided document."] * len(questions)
-                }
-            
-            logger.info(f"Document processed: {len(document_text)} characters")
-            
-            # Prepare answer engine
-            logger.info("Stage 2: Preparing Answer Engine with Groq LLM")
-            answer_engine.prepare_document(document_text)
-            
-            # Generate competition answers
-            logger.info("Stage 3: Generating Competition Answers")
-            answers = []
-            
-            for i, question in enumerate(questions):
-                q_start = time.time()
-                logger.info(f"Processing Q{i+1}/{len(questions)}: {question[:60]}...")
+            try:
+                # Use advanced document processor from app/main.py
+                logger.info("Stage 1: Document Processing")
+                document_text = await doc_processor.process_document(documents)
                 
-                try:
-                    # Use competition answer engine with Groq LLM
-                    answer = await answer_engine.generate_competition_answer(question)
-                    answers.append(answer)
+                if not document_text or len(document_text.strip()) < 50:
+                    logger.error("❌ Document processing failed or insufficient content")
+                    return {
+                        "answers": ["Unable to extract sufficient information from the provided document. The document may be empty, corrupted, or inaccessible."] * len(questions)
+                    }
+                
+                logger.info(f"✅ Document processed: {len(document_text)} characters")
+                
+                # Prepare answer engine
+                logger.info("Stage 2: Preparing Answer Engine with Groq LLM")
+                answer_engine.prepare_document(document_text)
+                
+                # Generate competition answers
+                logger.info("Stage 3: Generating Competition Answers")
+                answers = []
+                
+                for i, question in enumerate(questions):
+                    q_start = time.time()
+                    logger.info(f"🤔 Processing Q{i+1}/{len(questions)}: {question[:60]}...")
                     
-                    q_time = time.time() - q_start
-                    logger.info(f"Q{i+1} completed in {q_time:.2f}s - Length: {len(answer)} chars")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to process Q{i+1}: {e}")
-                    answers.append("Unable to process this question due to processing error.")
-            
-            # Competition metrics
-            total_time = time.time() - start_time
-            avg_time = total_time / len(questions)
-            
-            logger.info(f"COMPETITION COMPLETED:")
-            logger.info(f"- Total Time: {total_time:.2f}s")
-            logger.info(f"- Average per Question: {avg_time:.2f}s")
-            logger.info(f"- Answers Generated: {len(answers)}")
-            
-            return {"answers": answers}
+                    try:
+                        # Use competition answer engine with Groq LLM
+                        answer = await answer_engine.generate_competition_answer(question)
+                        answers.append(answer)
+                        
+                        q_time = time.time() - q_start
+                        logger.info(f"✅ Q{i+1} completed in {q_time:.2f}s - Length: {len(answer)} chars")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ Failed to process Q{i+1}: {e}")
+                        answers.append("Unable to process this question due to processing error. Please try again.")
+                
+                # Competition metrics
+                total_time = time.time() - start_time
+                avg_time = total_time / len(questions) if questions else 0
+                
+                logger.info(f"🏆 COMPETITION COMPLETED:")
+                logger.info(f"   - Total Time: {total_time:.2f}s")
+                logger.info(f"   - Average per Question: {avg_time:.2f}s")
+                logger.info(f"   - Answers Generated: {len(answers)}")
+                
+                return {"answers": answers}
+                
+            except Exception as e:
+                logger.error(f"❌ Document processing pipeline failed: {e}")
+                questions = request_data.get("questions", [])
+                return {
+                    "answers": ["Document processing pipeline failed. Please check the document URL and try again."] * len(questions)
+                }
         
         else:
-            raise HTTPException(status_code=400, detail="Invalid request format. Expected 'data' or 'documents+questions'")
+            raise HTTPException(status_code=400, detail="Invalid request format. Expected 'data' array or 'documents' + 'questions' fields.")
             
     except Exception as e:
-        logger.error(f"Competition endpoint failed: {e}")
+        logger.error(f"❌ Competition endpoint critical failure: {e}")
         
         # Emergency fallback
         try:
             if 'request_data' in locals():
                 if "questions" in request_data:
                     question_count = len(request_data.get("questions", []))
-                    return {"answers": ["Unable to process this question due to system error."] * question_count}
+                    return {"answers": ["Critical system error occurred. Please try again later."] * question_count}
                 elif "data" in request_data:
                     return QueryResponse(
                         is_success=False,
@@ -232,19 +290,19 @@ async def health():
         "status": "healthy", 
         "version": "6.0.0",
         "competition_features": COMPETITION_FEATURES_AVAILABLE,
+        "import_status": "success" if COMPETITION_FEATURES_AVAILABLE else "failed",
         "timestamp": time.time()
     }
     
     if COMPETITION_FEATURES_AVAILABLE:
         try:
-            # Check if processors are working
             health_status["processors"] = {
                 "document_processor": bool(doc_processor),
                 "answer_engine": bool(answer_engine),
-                "groq_client": bool(answer_engine.groq_client) if answer_engine else False
+                "groq_client": bool(hasattr(answer_engine, 'groq_client') and answer_engine.groq_client) if answer_engine else False
             }
-        except:
-            health_status["processors"] = "error_checking_processors"
+        except Exception as e:
+            health_status["processors"] = f"error_checking_processors: {str(e)}"
     
     return health_status
 
@@ -252,7 +310,17 @@ async def health():
 async def test_processing():
     """Test endpoint for competition processing"""
     if not COMPETITION_FEATURES_AVAILABLE:
-        return {"status": "Competition features not available"}
+        return {
+            "status": "❌ Competition features not available",
+            "error": "Failed to import from app/main.py",
+            "suggestion": "Check if app/main.py exists and contains required classes"
+        }
+    
+    if not doc_processor or not answer_engine:
+        return {
+            "status": "❌ Processors not initialized",
+            "error": "doc_processor or answer_engine is None"
+        }
     
     try:
         # Test document processing
@@ -265,6 +333,8 @@ async def test_processing():
         
         Maternity Coverage: Maternity expenses are covered after twenty-four (24) months of continuous coverage. Limited to two deliveries per policy period.
         """
+        
+        logger.info("🧪 Testing competition pipeline")
         
         # Test the competition pipeline
         answer_engine.prepare_document(test_text)
@@ -289,7 +359,7 @@ async def test_processing():
             })
         
         return {
-            "status": "competition_processing_successful",
+            "status": "✅ competition_processing_successful",
             "groq_llm_status": "active",
             "test_document_length": len(test_text),
             "questions_processed": len(test_questions),
@@ -297,9 +367,11 @@ async def test_processing():
         }
         
     except Exception as e:
+        logger.error(f"❌ Test processing failed: {e}")
         return {
-            "status": "competition_processing_failed", 
-            "error": str(e)
+            "status": "❌ competition_processing_failed", 
+            "error": str(e),
+            "suggestion": "Check Groq API key configuration and app/main.py implementation"
         }
 
 @app.get("/competition-status")
@@ -308,12 +380,20 @@ async def competition_status():
     if not COMPETITION_FEATURES_AVAILABLE:
         return {
             "competition_ready": False,
-            "error": "Competition features not imported from app/main.py"
+            "status": "❌ Import Failed",
+            "error": "Competition features not imported from app/main.py",
+            "suggestions": [
+                "Check if app/main.py file exists in your repository",
+                "Verify app/main.py contains DocumentProcessor and CompetitionAnswerEngine classes",
+                "Check for syntax errors in app/main.py",
+                "Ensure all required dependencies are installed"
+            ]
         }
     
     try:
         status = {
             "competition_ready": True,
+            "status": "✅ Ready for Competition",
             "primary_llm": "Groq (Free tier)",
             "document_processing": "Advanced PDF/DOCX extraction",
             "semantic_search": "Available with fallbacks",
@@ -326,18 +406,42 @@ async def competition_status():
         }
         
         # Check system components
-        if hasattr(answer_engine, 'groq_client') and answer_engine.groq_client:
-            status["groq_status"] = "configured_and_ready"
+        if answer_engine and hasattr(answer_engine, 'groq_client') and answer_engine.groq_client:
+            status["groq_status"] = "✅ configured_and_ready"
         else:
-            status["groq_status"] = "not_configured"
+            status["groq_status"] = "⚠️ not_configured - check GROQ_API_KEY environment variable"
             
         return status
         
     except Exception as e:
         return {
             "competition_ready": False,
+            "status": "❌ System Check Failed",
             "error": str(e)
         }
+
+@app.get("/debug-imports")
+async def debug_imports():
+    """Debug endpoint to check import status"""
+    import_info = {
+        "current_directory": os.getcwd(),
+        "python_path": sys.path[:5],  # First 5 entries
+        "competition_features_available": COMPETITION_FEATURES_AVAILABLE,
+        "doc_processor_exists": doc_processor is not None,
+        "answer_engine_exists": answer_engine is not None
+    }
+    
+    # Check if app directory exists
+    app_dir = os.path.join(os.getcwd(), 'app')
+    main_file = os.path.join(app_dir, 'main.py')
+    
+    import_info["file_checks"] = {
+        "app_directory_exists": os.path.exists(app_dir),
+        "app_main_py_exists": os.path.exists(main_file),
+        "app_directory_contents": os.listdir(app_dir) if os.path.exists(app_dir) else "directory_not_found"
+    }
+    
+    return import_info
 
 # Error handlers
 @app.exception_handler(HTTPException)
@@ -348,13 +452,13 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {str(exc)}")
-    return {"error": "Internal server error occurred"}
+    return {"error": "Internal server error occurred during request processing"}
 
 # Server startup
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     logger.info(f"🚀 Starting HackRx 6.0 Competition Server on port {port}")
-    logger.info(f"📊 Competition features: {'Available' if COMPETITION_FEATURES_AVAILABLE else 'Not Available'}")
+    logger.info(f"📊 Competition features: {'✅ Available' if COMPETITION_FEATURES_AVAILABLE else '❌ Not Available'}")
     logger.info(f"🤖 Primary LLM: Groq (Free tier optimized)")
     logger.info(f"🏆 Competition mode: ACTIVE")
     
