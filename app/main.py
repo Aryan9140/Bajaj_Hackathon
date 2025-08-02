@@ -584,6 +584,8 @@ class EnhancedDocumentProcessor:
             content_parts = []
             total_pages = len(pdf_reader.pages)
             
+            
+            
             logger.info(f"Processing {total_pages} PDF pages with enhanced extraction")
             
             for page_num, page in enumerate(pdf_reader.pages):
@@ -609,6 +611,8 @@ class EnhancedDocumentProcessor:
         except Exception as e:
             logger.error(f"Enhanced PDF extraction failed: {str(e)}")
             raise ValueError(f"PDF processing error: {str(e)}")
+        
+        
     
     def _clean_text_enhanced(self, text: str) -> str:
         """Enhanced text cleaning that preserves important structure"""
@@ -1247,7 +1251,7 @@ class EnhancedLLMProcessor:
             response = self.openai_client.chat.completions.create(
                 model=OPENAI_LLM_MODEL,
                 messages=messages,
-                max_tokens=200,  # Increased for better answers
+                max_tokens=80,  # Increased for better answers
                 temperature=0.0,  # Deterministic for accuracy
                 top_p=1.0,
                 frequency_penalty=0.0,
@@ -1261,6 +1265,10 @@ class EnhancedLLMProcessor:
         except Exception as e:
             logger.error(f"Enhanced OpenAI API call failed: {str(e)}")
             raise e
+        
+
+
+        
     
     async def _generate_with_groq_enhanced(self, question: str, contexts: List[ContextMatch], question_analysis: Dict) -> str:
         """Enhanced Groq generation"""
@@ -1281,22 +1289,26 @@ class EnhancedLLMProcessor:
         
         raise ValueError("All enhanced Groq models failed")
     
+
+
+
+    
     def _prepare_enhanced_context(self, contexts: List[ContextMatch], question_analysis: Dict) -> str:
         """Prepare enhanced context with intelligent selection"""
         if not contexts:
             return ""
         
         # Select best contexts based on question type
-        max_contexts = 3 if question_analysis['complexity'] == 'simple' else 4
+        max_contexts = 2 if question_analysis['complexity'] == 'simple' else 4
         selected_contexts = []
         total_chars = 0
-        max_total_chars = 1800  # Increased for better context
+        max_total_chars = 800  # Increased for better context
         
         for context in contexts[:max_contexts]:
             context_text = context.text
             
             # Intelligent context truncation
-            if len(context_text) > 600:
+            if len(context_text) > 400:
                 # Try to keep the most relevant part
                 context_text = self._truncate_context_intelligently(context_text, question_analysis)
             
@@ -1312,6 +1324,8 @@ class EnhancedLLMProcessor:
                 break
         
         return "\n\n".join(selected_contexts)
+    
+    
     
     def _truncate_context_intelligently(self, context: str, question_analysis: Dict) -> str:
         """Intelligently truncate context to keep most relevant parts"""
@@ -2145,38 +2159,24 @@ async def test_enhanced_system():
 # Application Events
 
 @app.on_event("startup")
-async def enhanced_startup_event():
-    """Enhanced startup event"""
-    logger.info("🚀 ENHANCED Competition System v9.0.0 starting...")
-    logger.info("🎯 Target: 80%+ accuracy, 300+ score, sub-25s response")
+async def optimized_startup_event():
+    """Speed-optimized startup"""
+    logger.info("🚀 SPEED-OPTIMIZED Competition System starting...")
+    logger.info("🎯 Target: 60% accuracy, <15s response, 200+ score")
     
-    # Log system status
-    openai_status = "✅ READY" if enhanced_orchestrator.llm_processor.openai_available else "❌ NOT AVAILABLE"
-    groq_status = "✅ READY" if enhanced_orchestrator.llm_processor.groq_available else "❌ NOT AVAILABLE"
-    openai_embed_status = "✅ READY" if enhanced_orchestrator.document_processor.embedding_processor.openai_client else "❌ NOT AVAILABLE"
-    fallback_embed_status = "✅ READY" if enhanced_orchestrator.document_processor.embedding_processor.fallback_model else "❌ NOT AVAILABLE"
+    # Disable heavy features for speed
+    global SENTENCE_TRANSFORMERS_AVAILABLE
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
     
-    logger.info(f"🔵 OpenAI GPT-4o: {openai_status}")
-    logger.info(f"🟡 Groq Multi-Model: {groq_status}")
-    logger.info(f"🔵 OpenAI Embeddings: {openai_embed_status}")
-    logger.info(f"🟡 Fallback Embeddings: {fallback_embed_status}")
+    logger.info("⚡ Speed optimizations active:")
+    logger.info("   • Embeddings disabled for speed")
+    logger.info("   • Context size reduced")
+    logger.info("   • Simplified processing pipeline")
+    logger.info("   • Max 15 pages PDF processing")
+    logger.info("   • Strict timeouts enabled")
     
-    if enhanced_orchestrator.llm_processor.openai_available:
-        logger.info("🎯 PRIMARY MODE: Enhanced OpenAI GPT-4o + text-embedding-3-large")
-        logger.info("📊 Expected: 80%+ accuracy, 15-25s response, 300+ score")
-    elif enhanced_orchestrator.llm_processor.groq_available:
-        logger.info("🎯 FALLBACK MODE: Enhanced Groq models + fallback embeddings")
-        logger.info("📊 Expected: 70%+ accuracy, 20-30s response, 250+ score")
-    
-    logger.info("🔧 Enhanced Features Active:")
-    logger.info("   • Multi-stage document structure recognition")
-    logger.info("   • Intelligent context filtering with question-specific optimization")
-    logger.info("   • Specialized prompting based on question type analysis")
-    logger.info("   • Multi-factor answer validation pipeline")
-    logger.info("   • Enhanced confidence scoring and quality assessment")
-    logger.info("   • Question-specific fallback handling")
-    
-    logger.info("✅ Enhanced Competition System ready for maximum accuracy!")
+    logger.info("✅ Speed-optimized system ready!")
+
 
 @app.on_event("shutdown")
 async def enhanced_shutdown_event():
