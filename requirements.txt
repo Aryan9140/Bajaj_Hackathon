@@ -45,6 +45,7 @@ langchain-text-splitters==0.0.1
 # faiss-cpu==1.7.4
 chromadb==0.4.24
 cassio==0.1.4
+faiss-cpu==1.7.4
 
 tiktoken==0.5.2
 
